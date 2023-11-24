@@ -38,6 +38,8 @@ ap.add_argument("-o", "--output-file", type=str, default="output.csv",
 	            help="path to input file listing competitors (default:output.csv)")
 ap.add_argument("-s", "--seconds", type=float, default=5,
                 help="seconds between OCR captures to check for competitor names (default:5)")
+ap.add_argument("-d", "--debug", action="store_true",
+                help="print OCR capture strings as the program runs")
 args = vars(ap.parse_args())
 
 # competitor_names list will be used to check for relevant names
@@ -99,6 +101,8 @@ for current_frame in range(0, video_frames_total, FRAMES_TO_ITERATE):
             output_file.flush()
             detected_competitor_names.append(f"found {name}")
     video_time += datetime.timedelta(seconds=args["seconds"])
+    if args["debug_mode"]:
+        print(condensed_ocr_str)
     print(f"{video_time} -- {(current_frame/video_frames_total)*100:.2f}%"
           + " video scanned... " + ", ".join(detected_competitor_names))
 output_file.close()

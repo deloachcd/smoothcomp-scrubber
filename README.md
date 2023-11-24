@@ -37,6 +37,5 @@ The basic workflow with this program is:
 ## TODOs for me to do later
 - Exceptions. This script has none of them right now, and they would help
   out for sure.
-- Debug mode
 - Export to markdown tables / convert to PDFs directly
 - Orchestration for multiple mats/streams
