@@ -22,8 +22,8 @@ ap.add_argument("-f", "--competitors-file", type=str, default="competitors.csv",
 	            help="path to input file listing competitors (default:competitors.csv)")
 ap.add_argument("-o", "--output-file", type=str, default="output.csv",
 	            help="path to input file listing competitors (default:output.csv)")
-ap.add_argument("-s", "--seconds", type=float, default=10,
-                help="seconds between OCR captures to check for competitor names (default:10)")
+ap.add_argument("-s", "--seconds", type=float, default=5,
+                help="seconds between OCR captures to check for competitor names (default:5)")
 args = vars(ap.parse_args())
 
 # competitor_names list will be used to check for relevant names
