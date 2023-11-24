@@ -101,7 +101,7 @@ for current_frame in range(0, video_frames_total, FRAMES_TO_ITERATE):
             output_file.flush()
             detected_competitor_names.append(f"found {name}")
     video_time += datetime.timedelta(seconds=args["seconds"])
-    if args["debug_mode"]:
+    if args["debug"]:
         print(condensed_ocr_str)
     print(f"{video_time} -- {(current_frame/video_frames_total)*100:.2f}%"
           + " video scanned... " + ", ".join(detected_competitor_names))
