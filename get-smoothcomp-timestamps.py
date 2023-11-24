@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import collections
 import datetime
 import time
 
@@ -12,8 +13,21 @@ def crop_frame_to_competitor_names(frame, height, width):
     # crop to the section of the stream that's actually relevant
     # to our OCR engine - the small section where names actually
     # show up
+    # 
+    # note that we assume a 16:9 aspect ratio here - 
+    # anything else will be likely to break our text recognition
     return frame[3*(height//16):height//2, 
                  3*(width//32):29*(width//32)]
+
+
+def detect_name_in_ocr_str(name, ocr_str):
+    # detect name in condensed, lowercase OCR output by ensuring
+    # that every character in the name shows up at least the same
+    # number of times in the OCR string
+    counter_name = collections.Counter(name)
+    counter_ocr = collections.Counter(ocr_str)
+    counter_name.subtract(counter_ocr)
+    return all(counter_name[v] <= 0 for v in counter_name)
 
 
 ap = argparse.ArgumentParser()
@@ -29,11 +43,9 @@ args = vars(ap.parse_args())
 # competitor_names list will be used to check for relevant names
 # in OCR-captured strings
 competitor_names = []
-with open(args["competitors_file"], "r") as csvfile:
-    reader = csv.reader(csvfile, delimiter=",")
-    for row in reader:
-        firstname, lastname = row[0].strip(), row[1].strip()
-        competitor_names.append([firstname, lastname])
+with open(args["competitors_file"], "r") as infile:
+    for row in infile.readlines():
+        competitor_names.append(row.replace("\n","").strip())
 
 video = cv2.VideoCapture(args["video"])
 video_fps = video.get(cv2.CAP_PROP_FPS)
@@ -71,13 +83,21 @@ for current_frame in range(0, video_frames_total, FRAMES_TO_ITERATE):
     ocr_frame = crop_frame_to_competitor_names(
         cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), f_height, f_width
     )
-    frame_as_str = pytesseract.image_to_string(ocr_frame).lower()
+    # From the Tesseract docs:
+    # PSM=11: Sparse text. Find as much text as possible in no particular order.
+    # This seems to be faster and more accurate than the default method about
+    # getting the specific characters we're looking for (i.e. the ones in the
+    # relevant names) - the 'drawback' is that we have to be more clever about 
+    # how we match names (see: detect_name_in_ocr_string)
+    frame_as_str = pytesseract.image_to_string(ocr_frame,config="--psm 11")
+    condensed_ocr_str = "".join(list(filter(lambda c: c.isalnum(), frame_as_str)))
     detected_competitor_names = []
-    for firstname, lastname in competitor_names:
-        if firstname in frame_as_str and lastname in frame_as_str:
-            output_file.write(f"{firstname} {lastname},{video_time}\n")
+    for name in competitor_names:
+        condensed_name = name.replace(" ", "")
+        if detect_name_in_ocr_str(condensed_name.lower(), condensed_ocr_str.lower()):
+            output_file.write(f"{name},{video_time}\n")
             output_file.flush()
-            detected_competitor_names.append(f"found {firstname}")
+            detected_competitor_names.append(f"found {name}")
     video_time += datetime.timedelta(seconds=args["seconds"])
     print(f"{video_time} -- {(current_frame/video_frames_total)*100:.2f}%"
           + " video scanned... " + ", ".join(detected_competitor_names))
