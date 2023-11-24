@@ -12,8 +12,8 @@ def crop_frame_to_competitor_names(frame, height, width):
     # crop to the section of the stream that's actually relevant
     # to our OCR engine - the small section where names actually
     # show up
-    return frame[(height//4)-(height//32):(height//2)+(height//32), 
-                 (width//8)-(width//32):(7*(width//8))+(width//32)]
+    return frame[3*(height//16):height//2, 
+                 3*(width//32):29*(width//32)]
 
 
 ap = argparse.ArgumentParser()
