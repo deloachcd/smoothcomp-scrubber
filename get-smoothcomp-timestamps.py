@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import csv
-import collections
 import datetime
 import time
 
@@ -92,7 +90,9 @@ for current_frame in range(0, video_frames_total, FRAMES_TO_ITERATE):
             detected_competitor_names.append(f"found {name}")
     video_time += datetime.timedelta(seconds=args["seconds"])
     if args["debug"]:
-        print(condensed_ocr_str)
+        print("== DEBUG START ==")
+        print(frame_as_str)
+        print("== DEBUG END ==")
     print(f"{video_time} -- {(current_frame/video_frames_total)*100:.2f}%"
           + " video scanned... " + ", ".join(detected_competitor_names))
 output_file.close()
