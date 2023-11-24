@@ -11,7 +11,7 @@ MacOS has it through homebrew, your favorite Linux distro probably has it in
 its package manager, and Windows users should be using WSL and following 
 instructions for Linux distros with stuff like this script anyway.
 
-## Basic setup (once you have `tesseract-ocr` installed)
+## Basic setup (assuming tesseract is installed)
 ```
 git clone https://github.com/deloachcd/smoothcomp-scrubber.git
 cd smoothcomp-scrubber

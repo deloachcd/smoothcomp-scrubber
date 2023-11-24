@@ -16,7 +16,6 @@ def crop_frame_to_competitor_names(frame, height, width):
                  (width//8)-(width//32):(7*(width//8))+(width//32)]
 
 
-# construct the argument parser and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", type=str, help="path to input video file [required]")
 ap.add_argument("-f", "--competitors-file", type=str, default="competitors.csv",
