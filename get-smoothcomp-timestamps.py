@@ -20,16 +20,6 @@ def crop_frame_to_competitor_names(frame, height, width):
                  3*(width//32):29*(width//32)]
 
 
-def detect_name_in_ocr_str(name, ocr_str):
-    # detect name in condensed, lowercase OCR output by ensuring
-    # that every character in the name shows up at least the same
-    # number of times in the OCR string
-    counter_name = collections.Counter(name)
-    counter_ocr = collections.Counter(ocr_str)
-    counter_name.subtract(counter_ocr)
-    return all(counter_name[v] <= 0 for v in counter_name)
-
-
 ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", type=str, help="path to input video file [required]")
 ap.add_argument("-f", "--competitors-file", type=str, default="competitors.txt",
@@ -88,15 +78,15 @@ for current_frame in range(0, video_frames_total, FRAMES_TO_ITERATE):
     # From the Tesseract docs:
     # PSM=11: Sparse text. Find as much text as possible in no particular order.
     # This seems to be faster and more accurate than the default method about
-    # getting the specific characters we're looking for (i.e. the ones in the
-    # relevant names) - the 'drawback' is that we have to be more clever about 
-    # how we match names (see: detect_name_in_ocr_string)
+    # getting the names we're looking for.
     frame_as_str = pytesseract.image_to_string(ocr_frame,config="--psm 11")
-    condensed_ocr_str = "".join(list(filter(lambda c: c.isalnum(), frame_as_str)))
     detected_competitor_names = []
     for name in competitor_names:
-        condensed_name = name.replace(" ", "")
-        if detect_name_in_ocr_str(condensed_name.lower(), condensed_ocr_str.lower()):
+        lowered_frame_str = frame_as_str.lower()
+        competitor_name_in_frame = all(
+            map(lambda x: x.lower() in lowered_frame_str, name.split())
+        )
+        if competitor_name_in_frame:
             output_file.write(f"{name},{video_time}\n")
             output_file.flush()
             detected_competitor_names.append(f"found {name}")
