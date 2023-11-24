@@ -32,8 +32,8 @@ def detect_name_in_ocr_str(name, ocr_str):
 
 ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", type=str, help="path to input video file [required]")
-ap.add_argument("-f", "--competitors-file", type=str, default="competitors.csv",
-	            help="path to input file listing competitors (default:competitors.csv)")
+ap.add_argument("-f", "--competitors-file", type=str, default="competitors.txt",
+	            help="path to input file listing competitors (default:competitors.txt)")
 ap.add_argument("-o", "--output-file", type=str, default="output.csv",
 	            help="path to input file listing competitors (default:output.csv)")
 ap.add_argument("-s", "--seconds", type=float, default=5,

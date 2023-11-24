@@ -25,9 +25,9 @@ The basic workflow with this program is:
 - obtain the archive of the smoothcomp stream you want to scrub
   through, in a format like .MOV or .MP4 etc. (`yt-dlp` is a pretty
   good tool for this)
-- write a list of competitor names to find in the stream to a CSV file,
-  in `firstname, lastname` format (names should be written as they're
-  going to appear in the smoothcomp stream, case-insensitive)
+- write a list of competitor names to find in the stream to a text file
+  (names should be written as they're going to appear in the smoothcomp 
+  stream, case-insensitive)
 - call the script, passing in the video archive and competitor list files
   as arguments, and either also specifying an output file or just reading 
   from the default `output.csv` once you want to see where the competitors
