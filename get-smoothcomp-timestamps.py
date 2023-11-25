@@ -27,7 +27,9 @@ ap.add_argument("-o", "--output-file", type=str, default="output.csv",
 ap.add_argument("-s", "--seconds", type=float, default=5,
                 help="seconds between OCR captures to check for competitor names (default:5)")
 ap.add_argument("-j", "--jump-to-timestamp", type=str,
-                help="start at a specific time")
+                help="start at a specific time: (format:HH:MM:SS)")
+ap.add_argument("-p", "--psm", type=str, default=11,
+                help="have tesseract-ocr use a specific PSM (default:11)")
 ap.add_argument("-d", "--debug", action="store_true",
                 help="print OCR capture strings as the program runs")
 args = vars(ap.parse_args())
@@ -90,7 +92,7 @@ for current_frame in range(first_frame, video_frames_total, FRAMES_TO_ITERATE):
     # PSM=11: Sparse text. Find as much text as possible in no particular order.
     # This seems to be faster and more accurate than the default method about
     # getting the names we're looking for.
-    frame_as_str = pytesseract.image_to_string(ocr_frame,config="--psm 11")
+    frame_as_str = pytesseract.image_to_string(ocr_frame,config=f"--psm {args['psm']}")
     detected_competitor_names = []
     for name in competitor_names:
         lowered_frame_str = frame_as_str.lower()
