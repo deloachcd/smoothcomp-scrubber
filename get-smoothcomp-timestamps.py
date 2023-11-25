@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse
-import datetime
+from datetime import datetime, timedelta
 import time
 
 import cv2
@@ -26,6 +26,8 @@ ap.add_argument("-o", "--output-file", type=str, default="output.csv",
 	            help="path to input file listing competitors (default:output.csv)")
 ap.add_argument("-s", "--seconds", type=float, default=5,
                 help="seconds between OCR captures to check for competitor names (default:5)")
+ap.add_argument("-j", "--jump-to-timestamp", type=str,
+                help="start at a specific time")
 ap.add_argument("-d", "--debug", action="store_true",
                 help="print OCR capture strings as the program runs")
 args = vars(ap.parse_args())
@@ -54,13 +56,24 @@ FRAMES_TO_ITERATE = int(args["seconds"] * video_fps)
 start_time = time.time()
 rval, first_frame = video.read()
 f_height, f_width, f_channels = first_frame.shape
-video_time = datetime.timedelta(seconds=0)
-output_file = open(args["output_file"],"a")
+video_time = timedelta(seconds=0)
+if args["jump_to_timestamp"]:
+    timeskip_str = datetime.strptime(args["jump_to_timestamp"],"%H:%M:%S")
+    initial_timeskip = timedelta(
+        hours=timeskip_str.hour,
+        minutes=timeskip_str.minute,
+        seconds=timeskip_str.second
+    )
+    video_time += initial_timeskip
+    first_frame = initial_timeskip.seconds * video_fps
+else:
+    first_frame = 0
+output_file = open(args["output_file"],"w")
 
 # start scanning through the video, looking for instances of listed
 # competitor names
 print("\n== SCANNING ==")
-for current_frame in range(0, video_frames_total, FRAMES_TO_ITERATE):
+for current_frame in range(first_frame, video_frames_total, FRAMES_TO_ITERATE):
     video.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
     rval, frame = video.read()
     if not rval:
@@ -88,7 +101,7 @@ for current_frame in range(0, video_frames_total, FRAMES_TO_ITERATE):
             output_file.write(f"{name},{video_time}\n")
             output_file.flush()
             detected_competitor_names.append(f"found {name}")
-    video_time += datetime.timedelta(seconds=args["seconds"])
+    video_time += timedelta(seconds=args["seconds"])
     if args["debug"]:
         print("== DEBUG START ==")
         print(frame_as_str)
