@@ -65,7 +65,7 @@ if args["jump_to_timestamp"]:
         seconds=timeskip_str.second
     )
     video_time += initial_timeskip
-    first_frame = initial_timeskip.seconds * video_fps
+    first_frame = int(initial_timeskip.seconds * video_fps)
 else:
     first_frame = 0
 output_file = open(args["output_file"],"w")
