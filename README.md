@@ -34,6 +34,22 @@ The basic workflow with this program is:
   you listed show up. the script has a `-h` option that will tell you all
   the flags you need to get going
 
+### Usage example
+#### Obtaining the video file with yt-dlp
+First, we need a video file to scrub through for timestamps. These are usually
+linked in the Smoothcomp page for the relevant tournament, and linked under the
+"Livestreams" tab there. From here, we can obtain YouTube links to the videos
+to be used with `yt-dlp`.
+
+Many package managers provide an outdated version of `yt-dlp` that will not work
+to retrieve videos - we can ensure we're using an up-to-date version by 
+installing `yt-dlp` in our project's virtual environment and using that one:
+```
+source venv/bin/activate
+pip install yt-dlp
+./venv/bin/yt-dlp 'https://www.youtube.com/watch?v=${VIDEO_ID}' -o mat1.mp4
+```
+
 ## TODOs for me to do later
 - Exceptions. This script has none of them right now, and they would help
   out for sure.
