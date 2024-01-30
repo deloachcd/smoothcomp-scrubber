@@ -12,7 +12,7 @@ its package manager, and Windows users should be using WSL and following
 instructions for Linux distros with stuff like this script anyway.
 
 ## Basic setup (assuming tesseract is installed)
-```
+``` sh
 git clone https://github.com/deloachcd/smoothcomp-scrubber.git
 cd smoothcomp-scrubber
 python3 -m venv venv
@@ -41,14 +41,43 @@ linked in the Smoothcomp page for the relevant tournament, and linked under the
 "Livestreams" tab there. From here, we can obtain YouTube links to the videos
 to be used with `yt-dlp`.
 
-Many package managers provide an outdated version of `yt-dlp` that will not work
-to retrieve videos - we can ensure we're using an up-to-date version by 
-installing `yt-dlp` in our project's virtual environment and using that one:
-```
+Many package managers provide an outdated version of `yt-dlp` that will not
+actually work to retrieve videos - we can ensure we're using an up-to-date
+version by installing it in our project's virtual environment instead and
+calling it from there:
+``` sh
 source venv/bin/activate
 pip install yt-dlp
-./venv/bin/yt-dlp 'https://www.youtube.com/watch?v=${VIDEO_ID}' -o mat1.mp4
+yt-dlp() {
+  ./venv/bin/yt-dlp \
+    --merge-output-format mkv \
+    $@
+}
+./venv/bin/yt-dlp 'https://www.youtube.com/watch?v=${VIDEO_ID}' -o stream.mkv
 ```
+
+#### Scanning through the video file with the script
+Now, let's say we want to look for some names within `stream.mkv`.
+We'll first write them to a file `competitors.txt`:
+```
+osama bin laden
+sadam hussein
+jesus christ
+bill burr
+lena dunham
+kid rock
+```
+Once we've done that, we can run the script to find where our
+named competitors show up:
+``` sh
+./get-smoothcomp-timestamps.py \
+  -v stream.mkv \
+  -f competitors.txt \
+  -o result.csv
+```
+The script will then scan through the video, writing its current progress
+as console output and reporting when it detects listed names in the video
+stream.
 
 ## TODOs for me to do later
 - Exceptions. This script has none of them right now, and they would help
