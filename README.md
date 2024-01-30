@@ -60,12 +60,12 @@ yt-dlp() {
 Now, let's say we want to look for some names within `stream.mkv`.
 We'll first write them to a file `competitors.txt`:
 ```
-osama bin laden
-sadam hussein
-jesus christ
-bill burr
-lena dunham
-kid rock
+Osama bin Laden
+Sadam Hussein
+Jesus Christ
+Kevin Spacey
+Lena Dunham
+God
 ```
 Once we've done that, we can run the script to find where our
 named competitors show up:
@@ -75,6 +75,7 @@ named competitors show up:
   -f competitors.txt \
   -o result.csv
 ```
+
 The script will then scan through the video, writing its current progress
 as console output and reporting when it detects listed names in the video
 stream.
