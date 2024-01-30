@@ -56,8 +56,8 @@ FRAMES_TO_ITERATE = int(ARGS["seconds"] * VIDEO_FPS)
 # read shape from first frame so we don't need to get dimensions on
 # each loop iteration
 START_TIME = time.time()
-rval, first_frame = video.read()
-F_HEIGHT, F_WIDTH, F_CHANNELS = first_frame.shape
+rval, frame = video.read()
+F_HEIGHT, F_WIDTH, F_CHANNELS = frame.shape
 video_time = timedelta(seconds=0)
 if ARGS["jump_to_timestamp"]:
     TIMESKIP_STR = datetime.strptime(ARGS["jump_to_timestamp"],"%H:%M:%S")
@@ -67,15 +67,15 @@ if ARGS["jump_to_timestamp"]:
         seconds=TIMESKIP_STR.second
     )
     video_time += INITIAL_TIMESKIP
-    first_frame = int(INITIAL_TIMESKIP.seconds * VIDEO_FPS)
+    FIRST_FRAME = int(INITIAL_TIMESKIP.seconds * VIDEO_FPS)
 else:
-    first_frame = 0
+    FIRST_FRAME = 0
 output_file = open(ARGS["output_file"],"w")
 
 # start scanning through the video, looking for instances of listed
 # competitor names
 print("\n== SCANNING ==")
-for current_frame in range(first_frame, VIDEO_FRAMES_TOTAL, FRAMES_TO_ITERATE):
+for current_frame in range(FIRST_FRAME, VIDEO_FRAMES_TOTAL, FRAMES_TO_ITERATE):
     video.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
     rval, frame = video.read()
     if not rval:
