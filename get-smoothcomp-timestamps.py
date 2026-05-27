@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime, timedelta
 import time
+import os
 
 import cv2
 import pytesseract
@@ -19,20 +20,30 @@ def crop_frame_to_competitor_names(frame, height, width):
 
 
 ap = argparse.ArgumentParser()
-ap.add_argument("-v", "--video", type=str, help="path to input video file [required]")
+ap.add_argument("-i", "--input-file", type=str, help="path to input video file [required]")
 ap.add_argument("-f", "--competitors-file", type=str, default="competitors.txt",
 	            help="path to input file listing competitors (default:competitors.txt)")
 ap.add_argument("-o", "--output-file", type=str, default="output.csv",
 	            help="path to input file listing competitors (default:output.csv)")
-ap.add_argument("-s", "--seconds", type=float, default=5,
+ap.add_argument("-s", "--interval-seconds", type=float, default=5,
                 help="seconds between OCR captures to check for competitor names (default:5)")
-ap.add_argument("-j", "--jump-to-timestamp", type=str,
+ap.add_argument("--jump-to-timestamp", type=str,
                 help="start at a specific time: (format:HH:MM:SS)")
-ap.add_argument("-p", "--psm", type=str, default=11,
+ap.add_argument("--psm", type=str, default=11,
                 help="have tesseract-ocr use a specific PSM (default:11)")
-ap.add_argument("-d", "--debug", action="store_true",
+ap.add_argument("--print-captured-strings", action="store_true",
                 help="print OCR capture strings as the program runs")
-ARGS = vars(ap.parse_args())
+ap.add_argument("--print-build-info", action="store_true",
+                help="print OpenCV build info")
+ap.add_argument("--opencv-log-level", type=str, default="WARNING",
+                help="seconds between OCR captures to check for competitor names (default:5)")
+args = vars(ap.parse_args())
+
+# set OpenCV log level to debug
+if args["opencv_log_level"]:
+    os.environ["OPENCV_LOG_LEVEL"] = args["opencv_log_level"]
+if args["print_build_info"]:
+    print(cv2.getBuildInformation())
 
 # competitor_names list will be used to check for relevant names
 # in OCR-captured strings
@@ -41,9 +52,17 @@ with open(ARGS["competitors_file"], "r") as infile:
     for row in infile.readlines():
         competitor_names.append(row.replace("\n","").strip())
 
-video = cv2.VideoCapture(ARGS["video"])
-VIDEO_FPS = video.get(cv2.CAP_PROP_FPS)
-VIDEO_FRAMES_TOTAL = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+# use ffmpeg backend and don't even try to use hardware acceleration for the
+# sake of portability
+video = cv2.VideoCapture(args["video"], cv2.CAP_FFMPEG, [
+    cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_NONE
+])
+video_fps = video.get(cv2.CAP_PROP_FPS)
+video_frames_total = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
+if not video.isOpened():
+    print("Error opening video stream")
+    exit()
 
 print("== INITIALIZING ==")
 print(f"Video filename: {ARGS['video']}")
@@ -55,9 +74,12 @@ FRAMES_TO_ITERATE = int(ARGS["seconds"] * VIDEO_FPS)
 
 # read shape from first frame so we don't need to get dimensions on
 # each loop iteration
-START_TIME = time.time()
-rval, frame = video.read()
-F_HEIGHT, F_WIDTH, F_CHANNELS = frame.shape
+start_time = time.time()
+rval, first_frame = video.read()
+if rval:
+    f_height, f_width, f_channels = first_frame.shape
+else:
+    print("Could not get first frame of video file! (bad return value)")
 video_time = timedelta(seconds=0)
 if ARGS["jump_to_timestamp"]:
     TIMESKIP_STR = datetime.strptime(ARGS["jump_to_timestamp"],"%H:%M:%S")
@@ -92,8 +114,7 @@ for current_frame in range(FIRST_FRAME, VIDEO_FRAMES_TOTAL, FRAMES_TO_ITERATE):
     # PSM=11: Sparse text. Find as much text as possible in no particular order.
     # This seems to be faster and more accurate than the default method about
     # getting the names we're looking for.
-    frame_as_str = pytesseract.image_to_string(ocr_frame,
-                                               config=f"--psm {ARGS['psm']}")
+    frame_as_str = pytesseract.image_to_string(ocr_frame,config=f"--psm {args['psm']} -c load_system_dawg=false -c load_freq_dawg=false")
     detected_competitor_names = []
     for name in competitor_names:
         lowered_frame_str = frame_as_str.lower()
@@ -114,4 +135,4 @@ for current_frame in range(FIRST_FRAME, VIDEO_FRAMES_TOTAL, FRAMES_TO_ITERATE):
 output_file.close()
 
 print("== SUCCESS ==")
-print(f"Scanned through {VIDEO_FRAMES_TOTAL} frames in {time.time() - START_TIME}s")
+print(f"Scanned through {video_frames_total} frames in {time.time() - start_time}s")
