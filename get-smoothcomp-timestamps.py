@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import sys
+sys.stdout.reconfigure(line_buffering=True)
+
 from datetime import timedelta
 
 
