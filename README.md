@@ -64,7 +64,7 @@ and end timestamps to the output CSV.
 
 Results are written to `outputs/results.csv` in the format:
 ```
-name, start_time, end_time
+name, start_time, end_time, video_file
 ```
 
 Progress is printed as the scan runs:
@@ -74,6 +74,22 @@ Progress is printed as the scan runs:
 0:05:35 -- 14.23% video scanned... found God
   >> closed window for God: 0:05:30 -> 0:08:45
 ```
+
+#### Scanning multiple videos at once
+
+Tournaments often stream across multiple mats or days. You can pass multiple
+video files in one run and all results will be written to a single CSV:
+
+``` sh
+docker run --rm -v ./targets:/targets -v ./outputs:/outputs local/scrubber \
+  pipenv run get-smoothcomp-timestamps.py \
+    -I /targets/mat1.mp4 /targets/mat2.mp4 /targets/mat3.mp4 \
+    -f /targets/competitors.txt \
+    -o /outputs/results.csv
+```
+
+Each row in the CSV will include the source video file, so `make-clips.py`
+knows where to pull each clip from.
 
 ### Step 4: Make clips (optional)
 ``` sh
@@ -112,16 +128,17 @@ make clips VIDEO=targets/other.mp4 RESULTS=outputs/out.csv CLIPS_DIR=outputs/myc
 
 ### get-smoothcomp-timestamps.py
 
-Scans a video file for competitor names using OCR and writes match windows to a CSV.
+Scans one or more video files for competitor names using OCR and writes match windows to a CSV.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-i, --input-file` | required | Path to video file |
+| `-i, --input-file` | — | Path to a single video file (mutually exclusive with `-I`) |
+| `-I, --input-files` | — | Paths to multiple video files, scanned sequentially |
 | `-f, --competitors-file` | `competitors.txt` | Path to competitor names file |
 | `-o, --output-file` | `output.csv` | Path to output CSV |
 | `-s, --interval-seconds` | `5` | Seconds between OCR frames |
 | `-g, --gap-tolerance` | `3` | Missed intervals before closing a match window |
-| `--jump-to-timestamp` | — | Skip to a timestamp before scanning (HH:MM:SS) |
+| `--jump-to-timestamp` | — | Skip to a timestamp before scanning, single-file only (HH:MM:SS) |
 | `--psm` | `11` | Tesseract page segmentation mode |
 | `--print-captured-strings` | — | Print raw OCR output for debugging |
 
@@ -131,7 +148,7 @@ Reads a timestamps CSV and cuts each match into a clip using ffmpeg.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-i, --input-file` | required | Path to source video file |
+| `-i, --input-file` | — | Fallback video file if CSV has no `video_file` column |
 | `-t, --timestamps-file` | `output.csv` | Path to timestamps CSV |
 | `-o, --output-dir` | `clips` | Directory to write clips into |
 | `-p, --clip-padding` | `10` | Seconds of padding before and after each clip |

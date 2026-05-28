@@ -54,23 +54,29 @@ def compute_clip_window(start_td, end_td, padding_seconds):
     return clip_start, clip_end - clip_start
 
 
-def read_timestamps_csv(path):
-    """Return list of (name, start_timedelta, end_timedelta) from a CSV file."""
+def read_timestamps_csv(path, fallback_video_file=None):
+    """Return list of (name, start_timedelta, end_timedelta, video_file) from a CSV file.
+
+    If a row has no video_file column, fallback_video_file is used instead.
+    """
     rows = []
     with open(path, "r") as f:
         reader = csv.reader(f)
         for row in reader:
             if len(row) < 3:
                 continue
-            name, start_str, end_str = row[0].strip(), row[1].strip(), row[2].strip()
-            rows.append((name, parse_timedelta(start_str), parse_timedelta(end_str)))
+            name = row[0].strip()
+            start_td = parse_timedelta(row[1])
+            end_td = parse_timedelta(row[2])
+            video_file = row[3].strip() if len(row) >= 4 else fallback_video_file
+            rows.append((name, start_td, end_td, video_file))
     return rows
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("-i", "--input-file", type=str, required=True,
-                    help="path to source video file")
+    ap.add_argument("-i", "--input-file", type=str, default=None,
+                    help="path to source video file (required if CSV has no video_file column)")
     ap.add_argument("-t", "--timestamps-file", type=str, default="output.csv",
                     help="path to CSV of match windows from get-smoothcomp-timestamps.py (default:output.csv)")
     ap.add_argument("-o", "--output-dir", type=str, default="clips",
@@ -83,27 +89,34 @@ if __name__ == "__main__":
 
     os.makedirs(args["output_dir"], exist_ok=True)
 
-    rows = read_timestamps_csv(args["timestamps_file"])
+    rows = read_timestamps_csv(args["timestamps_file"], fallback_video_file=args["input_file"])
 
     if not rows:
         print("No match windows found in timestamps file.")
         exit(0)
 
+    missing = [r for r in rows if not r[3]]
+    if missing:
+        print("ERROR: some rows have no video file. Pass -i/--input-file or re-scan with a newer version of the script.")
+        for r in missing:
+            print(f"  {r[0]} {r[1]}")
+        exit(1)
+
     print(f"== MAKING CLIPS ==")
-    print(f"Source video: {args['input_file']}")
     print(f"Timestamps file: {args['timestamps_file']}")
     print(f"Output dir: {args['output_dir']}")
     print(f"Clip padding: {args['clip_padding']}s")
     print(f"Clips to generate: {len(rows)}\n")
 
-    for name, start_td, end_td in rows:
+    for name, start_td, end_td, video_file in rows:
         clip_start, duration = compute_clip_window(start_td, end_td, args["clip_padding"])
         output_path = os.path.join(args["output_dir"], build_clip_filename(name, start_td))
 
-        print(f"Clipping {name} [{start_td} -> {end_td}] (with padding: {clip_start:.0f}s -> {clip_start + duration:.0f}s)")
+        print(f"Clipping {name} [{start_td} -> {end_td}] from {video_file}")
+        print(f"  (with padding: {clip_start:.0f}s -> {clip_start + duration:.0f}s)")
         print(f"  -> {output_path}")
 
-        cmd = build_ffmpeg_cmd(args["ffmpeg"], args["input_file"], clip_start, duration, output_path)
+        cmd = build_ffmpeg_cmd(args["ffmpeg"], video_file, clip_start, duration, output_path)
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             print(f"  ERROR: ffmpeg failed for {name}")

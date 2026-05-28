@@ -229,16 +229,34 @@ class TestReadTimestampsCsv:
         f.close()
         return f.name
 
-    def test_reads_rows(self):
+    def test_reads_rows_with_video_file(self):
         path = self._write_csv([
-            ["John Smith", "0:01:00", "0:03:00"],
-            ["Jane Doe", "0:05:00", "0:07:30"],
+            ["John Smith", "0:01:00", "0:03:00", "/targets/mat1.mp4"],
+            ["Jane Doe", "0:05:00", "0:07:30", "/targets/mat2.mp4"],
         ])
         try:
             rows = read_timestamps_csv(path)
             assert len(rows) == 2
-            assert rows[0] == ("John Smith", timedelta(minutes=1), timedelta(minutes=3))
-            assert rows[1] == ("Jane Doe", timedelta(minutes=5), timedelta(minutes=7, seconds=30))
+            assert rows[0] == ("John Smith", timedelta(minutes=1), timedelta(minutes=3), "/targets/mat1.mp4")
+            assert rows[1] == ("Jane Doe", timedelta(minutes=5), timedelta(minutes=7, seconds=30), "/targets/mat2.mp4")
+        finally:
+            os.unlink(path)
+
+    def test_falls_back_to_provided_video_file(self):
+        path = self._write_csv([
+            ["John Smith", "0:01:00", "0:03:00"],
+        ])
+        try:
+            rows = read_timestamps_csv(path, fallback_video_file="/targets/video.mp4")
+            assert rows[0][3] == "/targets/video.mp4"
+        finally:
+            os.unlink(path)
+
+    def test_video_file_none_when_no_fallback(self):
+        path = self._write_csv([["John Smith", "0:01:00", "0:02:00"]])
+        try:
+            rows = read_timestamps_csv(path)
+            assert rows[0][3] is None
         finally:
             os.unlink(path)
 
@@ -258,9 +276,10 @@ class TestReadTimestampsCsv:
             os.unlink(path)
 
     def test_strips_whitespace(self):
-        path = self._write_csv([[" John Smith ", " 0:01:00 ", " 0:02:00 "]])
+        path = self._write_csv([[" John Smith ", " 0:01:00 ", " 0:02:00 ", " /targets/video.mp4 "]])
         try:
             rows = read_timestamps_csv(path)
             assert rows[0][0] == "John Smith"
+            assert rows[0][3] == "/targets/video.mp4"
         finally:
             os.unlink(path)
