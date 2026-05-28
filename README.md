@@ -81,15 +81,11 @@ Tournaments often stream across multiple mats or days. You can pass multiple
 video files in one run and all results will be written to a single CSV:
 
 ``` sh
-docker run --rm -v ./targets:/targets -v ./outputs:/outputs local/scrubber \
-  pipenv run get-smoothcomp-timestamps.py \
-    -I /targets/mat1.mp4 /targets/mat2.mp4 /targets/mat3.mp4 \
-    -f /targets/competitors.txt \
-    -o /outputs/results.csv
+make scan VIDEOS="targets/mat1.mp4 targets/mat2.mp4 targets/mat3.mp4"
 ```
 
 Each row in the CSV will include the source video file, so `make-clips.py`
-knows where to pull each clip from.
+knows where to pull each clip from without any extra arguments.
 
 ### Step 4: Make clips (optional)
 ``` sh
