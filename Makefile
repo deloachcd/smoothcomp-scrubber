@@ -1,5 +1,5 @@
 IMAGE       := local/scrubber
-VIDEO       := targets/video.mp4
+VIDEOS      := targets/video.mp4
 COMPETITORS := targets/competitors.txt
 RESULTS     := outputs/results.csv
 CLIPS_DIR   := outputs/clips
@@ -17,19 +17,19 @@ download: dirs
 	docker run --rm -v ./targets:/targets $(IMAGE) \
 		yt-dlp -S res,ect:mp4:m4a --recode mp4 "$(URL)" -o /targets/video.mp4
 
-## Optionally override: VIDEO= COMPETITORS= RESULTS=
+## Single video:  make scan
+## Multi-video:   make scan VIDEOS="targets/mat1.mp4 targets/mat2.mp4"
 scan: dirs
 	docker run --rm -v ./targets:/targets -v ./outputs:/outputs $(IMAGE) \
 		pipenv run get-smoothcomp-timestamps.py \
-			-i /$(VIDEO) \
+			$(if $(word 2,$(VIDEOS)),-I $(addprefix /,$(VIDEOS)),-i /$(VIDEOS)) \
 			-f /$(COMPETITORS) \
 			-o /$(RESULTS)
 
-## Optionally override: VIDEO= RESULTS= CLIPS_DIR=
+## Optionally override: RESULTS= CLIPS_DIR=
 clips: dirs
 	docker run --rm -v ./targets:/targets -v ./outputs:/outputs $(IMAGE) \
 		pipenv run make-clips.py \
-			-i /$(VIDEO) \
 			-t /$(RESULTS) \
 			-o /$(CLIPS_DIR)
 

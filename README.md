@@ -120,8 +120,13 @@ default, so you don't miss the walkout or the final submission.
 All targets accept variable overrides:
 
 ``` sh
-make scan VIDEO=targets/other.mp4 COMPETITORS=targets/mynames.txt RESULTS=outputs/out.csv
-make clips VIDEO=targets/other.mp4 RESULTS=outputs/out.csv CLIPS_DIR=outputs/myclips
+# single video
+make scan VIDEOS=targets/other.mp4 COMPETITORS=targets/mynames.txt RESULTS=outputs/out.csv
+
+# multiple videos — the Makefile automatically switches to -I
+make scan VIDEOS="targets/mat1.mp4 targets/mat2.mp4 targets/mat3.mp4"
+
+make clips RESULTS=outputs/out.csv CLIPS_DIR=outputs/myclips
 ```
 
 ## Script reference
