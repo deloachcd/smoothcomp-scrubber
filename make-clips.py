@@ -2,7 +2,9 @@
 import argparse
 import csv
 import os
+import re
 import subprocess
+import sys
 from datetime import timedelta
 
 
@@ -28,7 +30,7 @@ def format_timestamp_for_filename(td):
 
 
 def build_clip_filename(name, start_td):
-    safe_name = name.replace(" ", "_").replace("/", "_")
+    safe_name = re.sub(r'[^\w\-]', '_', name)
     ts_str = format_timestamp_for_filename(start_td)
     return f"{safe_name}_{ts_str}.mp4"
 
@@ -93,14 +95,14 @@ if __name__ == "__main__":
 
     if not rows:
         print("No match windows found in timestamps file.")
-        exit(0)
+        sys.exit(0)
 
     missing = [r for r in rows if not r[3]]
     if missing:
         print("ERROR: some rows have no video file. Pass -i/--input-file or re-scan with a newer version of the script.")
         for r in missing:
             print(f"  {r[0]} {r[1]}")
-        exit(1)
+        sys.exit(1)
 
     print(f"== MAKING CLIPS ==")
     print(f"Timestamps file: {args['timestamps_file']}")

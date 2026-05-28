@@ -13,12 +13,24 @@ def crop_frame_to_competitor_names(frame, height, width):
                  3*(width//32):29*(width//32)]
 
 
+def load_competitor_names(path):
+    """Load competitor names from a file, skipping blank lines."""
+    names = []
+    with open(path, "r") as f:
+        for row in f.readlines():
+            name = row.replace("\n", "").strip()
+            if name:
+                names.append(name)
+    return names
+
+
 def detect_competitor_names(frame_as_str, competitor_names):
     """Return list of names from competitor_names found in frame_as_str."""
     detected = []
     lowered = frame_as_str.lower()
     for name in competitor_names:
-        if all(part.lower() in lowered for part in name.split()):
+        parts = name.split()
+        if parts and all(part.lower() in lowered for part in parts):
             detected.append(name)
     return detected
 
@@ -27,20 +39,28 @@ def update_match_windows(active_matches, competitor_names, detected_names, video
     """Update open match windows given the current set of detected names.
 
     Returns list of (name, start_time, end_time) for any windows that closed.
+    end_time is the last frame the name was actually detected, not the frame
+    where the gap tolerance was exceeded.
     Mutates active_matches in place.
     """
     closed = []
     for name in competitor_names:
         if name in detected_names:
             if name not in active_matches:
-                active_matches[name] = {"start_time": video_time, "miss_count": 0}
+                active_matches[name] = {
+                    "start_time": video_time,
+                    "last_seen_time": video_time,
+                    "miss_count": 0,
+                }
             else:
                 active_matches[name]["miss_count"] = 0
+                active_matches[name]["last_seen_time"] = video_time
         elif name in active_matches:
             active_matches[name]["miss_count"] += 1
             if active_matches[name]["miss_count"] > gap_tolerance:
                 match = active_matches.pop(name)
-                closed.append((name, match["start_time"], video_time))
+                end_time = match.get("last_seen_time", video_time)
+                closed.append((name, match["start_time"], end_time))
     return closed
 
 
@@ -50,6 +70,8 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
 
     Writes rows of (name, start_time, end_time, video_file) to output_file.
     """
+    # cv2/pytesseract imported here so the pure functions above can be imported
+    # in tests without requiring those packages to be installed on the host.
     import cv2
     import pytesseract
     from datetime import datetime
@@ -58,25 +80,25 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
     video = cv2.VideoCapture(input_file, cv2.CAP_FFMPEG, [
         cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_NONE
     ])
-    video_fps = video.get(cv2.CAP_PROP_FPS)
-    video_frames_total = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 
     if not video.isOpened():
         print(f"Error opening video stream: {input_file}")
         return
 
+    video_fps = video.get(cv2.CAP_PROP_FPS)
+    video_frames_total = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
     print(f"  Video FPS: {video_fps}")
     frames_to_iterate = int(interval_seconds * video_fps)
 
     start_time = time.time()
-    rval, first_frame = video.read()
+    rval, first_frame_data = video.read()
     if rval:
-        f_height, f_width, f_channels = first_frame.shape
+        f_height, f_width, _ = first_frame_data.shape
     else:
         print("Could not get first frame of video file! (bad return value)")
         return
 
-    video_time = timedelta(seconds=0)
     if jump_to_timestamp:
         timeskip_str = datetime.strptime(jump_to_timestamp, "%H:%M:%S")
         initial_timeskip = timedelta(
@@ -84,14 +106,19 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
             minutes=timeskip_str.minute,
             seconds=timeskip_str.second
         )
-        video_time += initial_timeskip
         start_frame = int(initial_timeskip.total_seconds() * video_fps)
     else:
         start_frame = 0
 
     active_matches = {}
+    last_frame = start_frame
 
     for current_frame in range(start_frame, video_frames_total, frames_to_iterate):
+        # derive video_time from actual frame position to avoid floating-point
+        # drift when interval_seconds doesn't divide evenly into whole frames
+        video_time = timedelta(seconds=current_frame / video_fps)
+        last_frame = current_frame
+
         video.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
         rval, frame = video.read()
         if not rval:
@@ -106,18 +133,19 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
         )
 
         detected_names = detect_competitor_names(frame_as_str, competitor_names)
+
+        names_before = set(active_matches.keys())
         closed = update_match_windows(active_matches, competitor_names, detected_names, video_time, gap_tolerance)
+        newly_opened = set(active_matches.keys()) - names_before
 
         for name, start, end in closed:
             output_file.write(f"{name},{start},{end},{input_file}\n")
             output_file.flush()
             print(f"  >> closed window for {name}: {start} -> {end}")
 
-        for name in detected_names:
-            if name in active_matches and active_matches[name]["miss_count"] == 0 and active_matches[name]["start_time"] == video_time:
-                print(f"  >> opened window for {name} at {video_time}")
+        for name in newly_opened:
+            print(f"  >> opened window for {name} at {video_time}")
 
-        video_time += timedelta(seconds=interval_seconds)
         if print_captured_strings:
             print("== CAPTURED STR START ==")
             print(frame_as_str)
@@ -126,11 +154,13 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
               + " video scanned... " + ", ".join([f"found {n}" for n in detected_names]))
 
     # close any windows still open at end of video
+    final_time = timedelta(seconds=last_frame / video_fps) if video_frames_total > 0 else timedelta(0)
     for name in list(active_matches.keys()):
         match = active_matches.pop(name)
-        output_file.write(f"{name},{match['start_time']},{video_time},{input_file}\n")
+        end_time = match.get("last_seen_time", final_time)
+        output_file.write(f"{name},{match['start_time']},{end_time},{input_file}\n")
         output_file.flush()
-        print(f"  >> closed window for {name}: {match['start_time']} -> {video_time}")
+        print(f"  >> closed window for {name}: {match['start_time']} -> {end_time}")
 
     print(f"  Scanned {video_frames_total} frames in {time.time() - start_time:.1f}s")
 
@@ -156,7 +186,7 @@ if __name__ == "__main__":
                     help="consecutive missed intervals before closing a match window (default:3)")
     ap.add_argument("--jump-to-timestamp", type=str,
                     help="start at a specific time: (format:HH:MM:SS) — only applies to single-file mode")
-    ap.add_argument("--psm", type=str, default=11,
+    ap.add_argument("--psm", type=int, default=11,
                     help="have tesseract-ocr use a specific PSM (default:11)")
     ap.add_argument("--print-captured-strings", action="store_true",
                     help="print OCR capture strings as the program runs")
@@ -172,11 +202,7 @@ if __name__ == "__main__":
         print(cv2.getBuildInformation())
 
     input_files = args["input_files"] if args["input_files"] else [args["input_file"]]
-
-    competitor_names = []
-    with open(args["competitors_file"], "r") as infile:
-        for row in infile.readlines():
-            competitor_names.append(row.replace("\n", "").strip())
+    competitor_names = load_competitor_names(args["competitors_file"])
 
     print("== INITIALIZING ==")
     print(f"Video file(s): {', '.join(input_files)}")

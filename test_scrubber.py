@@ -6,8 +6,8 @@ from datetime import timedelta
 
 import pytest
 
-# Import only the pure functions — scripts are guarded by __name__ == "__main__"
-from get_smoothcomp_timestamps import detect_competitor_names, update_match_windows
+# Modules loaded via conftest.py aliases (hyphenated filenames can't be imported directly)
+from get_smoothcomp_timestamps import detect_competitor_names, load_competitor_names, update_match_windows
 from make_clips import (
     parse_timedelta,
     format_timestamp_for_filename,
@@ -16,6 +16,55 @@ from make_clips import (
     compute_clip_window,
     read_timestamps_csv,
 )
+
+
+# ---------------------------------------------------------------------------
+# load_competitor_names
+# ---------------------------------------------------------------------------
+
+class TestLoadCompetitorNames:
+    def _write_file(self, content):
+        f = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+        f.write(content)
+        f.close()
+        return f.name
+
+    def test_loads_names(self):
+        path = self._write_file("John Smith\nJane Doe\n")
+        try:
+            assert load_competitor_names(path) == ["John Smith", "Jane Doe"]
+        finally:
+            os.unlink(path)
+
+    def test_skips_blank_lines(self):
+        path = self._write_file("John Smith\n\nJane Doe\n\n")
+        try:
+            assert load_competitor_names(path) == ["John Smith", "Jane Doe"]
+        finally:
+            os.unlink(path)
+
+    def test_skips_whitespace_only_lines(self):
+        path = self._write_file("John Smith\n   \nJane Doe\n")
+        try:
+            assert load_competitor_names(path) == ["John Smith", "Jane Doe"]
+        finally:
+            os.unlink(path)
+
+    def test_empty_file_returns_empty_list(self):
+        path = self._write_file("")
+        try:
+            assert load_competitor_names(path) == []
+        finally:
+            os.unlink(path)
+
+    def test_trailing_newline_not_included(self):
+        path = self._write_file("Alice\n")
+        try:
+            result = load_competitor_names(path)
+            assert result == ["Alice"]
+            assert "" not in result
+        finally:
+            os.unlink(path)
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +95,11 @@ class TestDetectCompetitorNames:
     def test_single_word_name(self):
         assert detect_competitor_names("God smites all", ["God"]) == ["God"]
 
+    def test_empty_string_name_never_matches(self):
+        # blank line in competitors file must be filtered before reaching here,
+        # but empty string should not vacuously match every frame
+        assert detect_competitor_names("anything at all", [""]) == []
+
 
 # ---------------------------------------------------------------------------
 # update_match_windows
@@ -65,30 +119,47 @@ class TestUpdateMatchWindows:
         closed = update_match_windows(active, ["Alice"], ["Alice"], T0, gap_tolerance=3)
         assert "Alice" in active
         assert active["Alice"]["start_time"] == T0
+        assert active["Alice"]["last_seen_time"] == T0
         assert active["Alice"]["miss_count"] == 0
         assert closed == []
 
     def test_resets_miss_count_on_redetection(self):
-        active = {"Alice": {"start_time": T0, "miss_count": 2}}
+        active = {"Alice": {"start_time": T0, "last_seen_time": T0, "miss_count": 2}}
         update_match_windows(active, ["Alice"], ["Alice"], T5, gap_tolerance=3)
         assert active["Alice"]["miss_count"] == 0
 
+    def test_updates_last_seen_time_on_redetection(self):
+        active = {"Alice": {"start_time": T0, "last_seen_time": T0, "miss_count": 0}}
+        update_match_windows(active, ["Alice"], ["Alice"], T10, gap_tolerance=3)
+        assert active["Alice"]["last_seen_time"] == T10
+
     def test_increments_miss_count_on_miss(self):
-        active = {"Alice": {"start_time": T0, "miss_count": 0}}
+        active = {"Alice": {"start_time": T0, "last_seen_time": T0, "miss_count": 0}}
         closed = update_match_windows(active, ["Alice"], [], T5, gap_tolerance=3)
         assert active["Alice"]["miss_count"] == 1
         assert closed == []
 
+    def test_last_seen_time_not_updated_on_miss(self):
+        active = {"Alice": {"start_time": T0, "last_seen_time": T5, "miss_count": 1}}
+        update_match_windows(active, ["Alice"], [], T10, gap_tolerance=3)
+        assert active["Alice"]["last_seen_time"] == T5
+
+    def test_end_time_is_last_seen_not_close_time(self):
+        # last seen at T10, window closes at T25 after 3 misses
+        active = {"Alice": {"start_time": T0, "last_seen_time": T10, "miss_count": 3}}
+        closed = update_match_windows(active, ["Alice"], [], T25, gap_tolerance=3)
+        assert len(closed) == 1
+        name, start, end = closed[0]
+        assert end == T10  # last seen, not T25
+
     def test_closes_window_after_gap_tolerance_exceeded(self):
-        active = {"Alice": {"start_time": T0, "miss_count": 3}}
+        active = {"Alice": {"start_time": T0, "last_seen_time": T0, "miss_count": 3}}
         closed = update_match_windows(active, ["Alice"], [], T20, gap_tolerance=3)
         assert "Alice" not in active
         assert len(closed) == 1
-        assert closed[0] == ("Alice", T0, T20)
 
     def test_does_not_close_window_at_exactly_gap_tolerance(self):
-        # miss_count becomes gap_tolerance, not gap_tolerance+1
-        active = {"Alice": {"start_time": T0, "miss_count": 2}}
+        active = {"Alice": {"start_time": T0, "last_seen_time": T0, "miss_count": 2}}
         closed = update_match_windows(active, ["Alice"], [], T15, gap_tolerance=3)
         assert "Alice" in active
         assert active["Alice"]["miss_count"] == 3
@@ -96,13 +167,13 @@ class TestUpdateMatchWindows:
 
     def test_multiple_competitors_independent(self):
         active = {
-            "Alice": {"start_time": T0, "miss_count": 0},
-            "Bob": {"start_time": T0, "miss_count": 3},
+            "Alice": {"start_time": T0, "last_seen_time": T10, "miss_count": 0},
+            "Bob": {"start_time": T0, "last_seen_time": T5, "miss_count": 3},
         }
-        closed = update_match_windows(active, ["Alice", "Bob"], ["Alice"], T10, gap_tolerance=3)
+        closed = update_match_windows(active, ["Alice", "Bob"], ["Alice"], T20, gap_tolerance=3)
         assert "Alice" in active
         assert "Bob" not in active
-        assert closed == [("Bob", T0, T10)]
+        assert closed == [("Bob", T0, T5)]  # end is last_seen, not T20
 
     def test_no_window_opened_for_undetected_untracked_name(self):
         active = {}
@@ -153,17 +224,25 @@ class TestFormatTimestampForFilename:
 
 class TestBuildClipFilename:
     def test_spaces_replaced(self):
-        name = "John Smith"
-        ts = timedelta(hours=1, minutes=2, seconds=3)
-        assert build_clip_filename(name, ts) == "John_Smith_01_02_03.mp4"
+        assert build_clip_filename("John Smith", timedelta(hours=1, minutes=2, seconds=3)) == "John_Smith_01_02_03.mp4"
 
     def test_slashes_replaced(self):
-        name = "A/B"
-        ts = timedelta(0)
-        assert build_clip_filename(name, ts) == "A_B_00_00_00.mp4"
+        assert build_clip_filename("A/B", timedelta(0)) == "A_B_00_00_00.mp4"
 
     def test_single_word(self):
         assert build_clip_filename("God", timedelta(seconds=30)) == "God_00_00_30.mp4"
+
+    def test_colons_replaced(self):
+        assert build_clip_filename("A:B", timedelta(0)) == "A_B_00_00_00.mp4"
+
+    def test_special_chars_replaced(self):
+        result = build_clip_filename('A*B?C"D', timedelta(0))
+        assert "*" not in result
+        assert "?" not in result
+        assert '"' not in result
+
+    def test_hyphens_preserved(self):
+        assert build_clip_filename("Jean-Paul", timedelta(0)) == "Jean-Paul_00_00_00.mp4"
 
 
 # ---------------------------------------------------------------------------
@@ -243,9 +322,7 @@ class TestReadTimestampsCsv:
             os.unlink(path)
 
     def test_falls_back_to_provided_video_file(self):
-        path = self._write_csv([
-            ["John Smith", "0:01:00", "0:03:00"],
-        ])
+        path = self._write_csv([["John Smith", "0:01:00", "0:03:00"]])
         try:
             rows = read_timestamps_csv(path, fallback_video_file="/targets/video.mp4")
             assert rows[0][3] == "/targets/video.mp4"
