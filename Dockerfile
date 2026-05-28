@@ -148,7 +148,7 @@ ENV LD_LIBRARY_PATH=/opt/ffmpeg/lib:/usr/local/lib:${LD_LIBRARY_PATH}
 ENV PATH=/root/.local/bin:/opt/ffmpeg/bin:${PATH}
 RUN pipx install pipenv yt-dlp \
  && pipenv --site-packages \
- && pipenv install pytesseract
+ && pipenv install pytesseract pytest
 
 # Verify OpenCV imports correctly
 RUN python3 -c "import cv2; print(cv2.__version__)"
@@ -169,8 +169,11 @@ PY
 RUN mkdir -p /targets /outputs
 VOLUME ["/targets", "/outputs"]
 
-# copy in the script
+# copy in the scripts and tests
 COPY get-smoothcomp-timestamps.py /usr/local/bin/get-smoothcomp-timestamps.py
-RUN chmod u+x /usr/local/bin/get-smoothcomp-timestamps.py
+COPY make-clips.py /usr/local/bin/make-clips.py
+COPY conftest.py /usr/local/bin/conftest.py
+COPY test_scrubber.py /usr/local/bin/test_scrubber.py
+RUN chmod u+x /usr/local/bin/get-smoothcomp-timestamps.py /usr/local/bin/make-clips.py
 
 CMD ["python3"]
