@@ -142,7 +142,7 @@ RUN echo "--remote-components ejs:npm" > /etc/yt-dlp.conf
 COPY --from=builder /opt/ffmpeg /opt/ffmpeg
 COPY --from=builder /usr/local /usr/local
 
-ENV LD_LIBRARY_PATH=/opt/ffmpeg/lib:/usr/local/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/opt/ffmpeg/lib:/usr/local/lib
 
 # Install pytesseract in pipenv
 ENV PATH=/root/.local/bin:/opt/ffmpeg/bin:${PATH}
