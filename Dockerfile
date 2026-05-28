@@ -166,15 +166,11 @@ print("FFmpeg backend enabled")
 PY
 
 # create volumes for hosting script + files
-RUN mkdir -p /script /targets /outputs
+RUN mkdir -p /targets /outputs
 VOLUME ["/targets", "/outputs"]
 
 # copy in the script
 COPY get-smoothcomp-timestamps.py /usr/local/bin/get-smoothcomp-timestamps.py
-RUN ln -s /usr/local/bin/get-smoothcomp-timestamps.py /script/scrub.py \
- && chmod u+x /usr/local/bin/get-smoothcomp-timestamps.py
-
-# set workdir to a location with a symlink to the script
-WORKDIR /script
+RUN chmod u+x /usr/local/bin/get-smoothcomp-timestamps.py
 
 CMD ["python3"]

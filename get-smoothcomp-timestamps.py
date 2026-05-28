@@ -48,13 +48,13 @@ if args["print_build_info"]:
 # competitor_names list will be used to check for relevant names
 # in OCR-captured strings
 competitor_names = []
-with open(ARGS["competitors_file"], "r") as infile:
+with open(args["competitors_file"], "r") as infile:
     for row in infile.readlines():
         competitor_names.append(row.replace("\n","").strip())
 
 # use ffmpeg backend and don't even try to use hardware acceleration for the
 # sake of portability
-video = cv2.VideoCapture(args["video"], cv2.CAP_FFMPEG, [
+video = cv2.VideoCapture(args["input_file"], cv2.CAP_FFMPEG, [
     cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_NONE
 ])
 video_fps = video.get(cv2.CAP_PROP_FPS)
@@ -65,12 +65,12 @@ if not video.isOpened():
     exit()
 
 print("== INITIALIZING ==")
-print(f"Video filename: {ARGS['video']}")
-print(f"Video FPS: {VIDEO_FPS}")
-print(f"Comptitor list: {ARGS['competitors_file']}")
-print(f"Output filename: {ARGS['output_file']}")
-print(f"Seconds between OCR capture frames: {ARGS['seconds']}")
-FRAMES_TO_ITERATE = int(ARGS["seconds"] * VIDEO_FPS)
+print(f"Video filename: {args['input_file']}")
+print(f"Video FPS: {video_fps}")
+print(f"Comptitor list: {args['competitors_file']}")
+print(f"Output filename: {args['output_file']}")
+print(f"Seconds between OCR capture frames: {args['interval_seconds']}")
+frames_to_iterate = int(args["interval_seconds"] * video_fps)
 
 # read shape from first frame so we don't need to get dimensions on
 # each loop iteration
@@ -81,23 +81,23 @@ if rval:
 else:
     print("Could not get first frame of video file! (bad return value)")
 video_time = timedelta(seconds=0)
-if ARGS["jump_to_timestamp"]:
-    TIMESKIP_STR = datetime.strptime(ARGS["jump_to_timestamp"],"%H:%M:%S")
-    INITIAL_TIMESKIP = timedelta(
-        hours=TIMESKIP_STR.hour,
-        minutes=TIMESKIP_STR.minute,
-        seconds=TIMESKIP_STR.second
+if args["jump_to_timestamp"]:
+    timeskip_str = datetime.strptime(args["jump_to_timestamp"],"%H:%M:%S")
+    initial_timeskip = timedelta(
+        hours=timeskip_str.hour,
+        minutes=timeskip_str.minute,
+        seconds=timeskip_str.second
     )
-    video_time += INITIAL_TIMESKIP
-    FIRST_FRAME = int(INITIAL_TIMESKIP.seconds * VIDEO_FPS)
+    video_time += initial_timeskip
+    first_frame = int(initial_timeskip.seconds * video_fps)
 else:
-    FIRST_FRAME = 0
-output_file = open(ARGS["output_file"],"w")
+    first_frame = 0
+output_file = open(args["output_file"],"w")
 
 # start scanning through the video, looking for instances of listed
 # competitor names
 print("\n== SCANNING ==")
-for current_frame in range(FIRST_FRAME, VIDEO_FRAMES_TOTAL, FRAMES_TO_ITERATE):
+for current_frame in range(first_frame, video_frames_total, frames_to_iterate):
     video.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
     rval, frame = video.read()
     if not rval:
@@ -108,7 +108,7 @@ for current_frame in range(FIRST_FRAME, VIDEO_FRAMES_TOTAL, FRAMES_TO_ITERATE):
     # where the relevant competitor names will actually show up on
     # the stream
     ocr_frame = crop_frame_to_competitor_names(
-        cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), F_HEIGHT, F_WIDTH
+        cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), f_height, f_width
     )
     # From the Tesseract docs:
     # PSM=11: Sparse text. Find as much text as possible in no particular order.
@@ -125,12 +125,12 @@ for current_frame in range(FIRST_FRAME, VIDEO_FRAMES_TOTAL, FRAMES_TO_ITERATE):
             output_file.write(f"{name},{video_time}\n")
             output_file.flush()
             detected_competitor_names.append(f"found {name}")
-    video_time += timedelta(seconds=ARGS["seconds"])
-    if ARGS["debug"]:
-        print("== DEBUG START ==")
+    video_time += timedelta(seconds=args["interval_seconds"])
+    if args["print_captured_strings"]:
+        print("== CAPTURED STR START ==")
         print(frame_as_str)
-        print("== DEBUG END ==")
-    print(f"{video_time} -- {(current_frame/VIDEO_FRAMES_TOTAL)*100:.2f}%"
+        print("== CAPTURE STR END ==")
+    print(f"{video_time} -- {(current_frame/video_frames_total)*100:.2f}%"
           + " video scanned... " + ", ".join(detected_competitor_names))
 output_file.close()
 
