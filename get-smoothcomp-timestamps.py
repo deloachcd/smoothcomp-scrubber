@@ -5,6 +5,11 @@ sys.stdout.reconfigure(line_buffering=True)
 from datetime import timedelta
 
 
+def log(msg):
+    from datetime import datetime
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+
+
 def crop_frame_to_competitor_names(frame, height, width):
     # crop to the section of the stream that's actually relevant
     # to our OCR engine - the small section where names actually
@@ -67,6 +72,18 @@ def update_match_windows(active_matches, competitor_names, detected_names, video
     return closed
 
 
+def format_eta(seconds_remaining):
+    seconds_remaining = int(seconds_remaining)
+    h = seconds_remaining // 3600
+    m = (seconds_remaining % 3600) // 60
+    s = seconds_remaining % 60
+    if h:
+        return f"{h}h {m:02d}m {s:02d}s"
+    if m:
+        return f"{m}m {s:02d}s"
+    return f"{s}s"
+
+
 def scan_video(input_file, competitor_names, output_file, interval_seconds,
                gap_tolerance, psm, jump_to_timestamp=None, print_captured_strings=False):
     """Scan a single video file for competitor match windows.
@@ -85,13 +102,13 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
     ])
 
     if not video.isOpened():
-        print(f"Error opening video stream: {input_file}")
+        log(f"Error opening video stream: {input_file}")
         return
 
     video_fps = video.get(cv2.CAP_PROP_FPS)
     video_frames_total = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    print(f"  Video FPS: {video_fps}")
+    log(f"Video FPS: {video_fps}")
     frames_to_iterate = int(interval_seconds * video_fps)
 
     start_time = time.time()
@@ -99,7 +116,7 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
     if rval:
         f_height, f_width, _ = first_frame_data.shape
     else:
-        print("Could not get first frame of video file! (bad return value)")
+        log("Could not get first frame of video file! (bad return value)")
         return
 
     if jump_to_timestamp:
@@ -115,6 +132,7 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
 
     active_matches = {}
     last_frame = start_frame
+    frames_remaining = video_frames_total - start_frame
 
     for current_frame in range(start_frame, video_frames_total, frames_to_iterate):
         # derive video_time from actual frame position to avoid floating-point
@@ -144,17 +162,26 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
         for name, start, end in closed:
             output_file.write(f"{name},{start},{end},{input_file}\n")
             output_file.flush()
-            print(f"  >> closed window for {name}: {start} -> {end}")
+            log(f">> closed window for {name}: {start} -> {end}")
 
         for name in newly_opened:
-            print(f"  >> opened window for {name} at {video_time}")
+            log(f">> opened window for {name} at {video_time}")
 
         if print_captured_strings:
-            print("== CAPTURED STR START ==")
+            log("== CAPTURED STR START ==")
             print(frame_as_str)
-            print("== CAPTURE STR END ==")
-        print(f"{video_time} -- {(current_frame/video_frames_total)*100:.2f}%"
-              + " video scanned... " + ", ".join([f"found {n}" for n in detected_names]))
+            log("== CAPTURE STR END ==")
+
+        elapsed = time.time() - start_time
+        pct = (current_frame / video_frames_total) * 100
+        frames_done = current_frame - start_frame + frames_to_iterate
+        if frames_done > 0 and elapsed > 0:
+            eta_str = f"ETA {format_eta(elapsed / frames_done * (frames_remaining - frames_done))}"
+        else:
+            eta_str = "ETA --"
+
+        found_str = ", ".join([f"found {n}" for n in detected_names])
+        log(f"{video_time} -- {pct:.1f}% -- {eta_str}" + (f" -- {found_str}" if found_str else ""))
 
     # close any windows still open at end of video
     final_time = timedelta(seconds=last_frame / video_fps) if video_frames_total > 0 else timedelta(0)
@@ -163,9 +190,9 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
         end_time = match.get("last_seen_time", final_time)
         output_file.write(f"{name},{match['start_time']},{end_time},{input_file}\n")
         output_file.flush()
-        print(f"  >> closed window for {name}: {match['start_time']} -> {end_time}")
+        log(f">> closed window for {name}: {match['start_time']} -> {end_time}")
 
-    print(f"  Scanned {video_frames_total} frames in {time.time() - start_time:.1f}s")
+    log(f"Scanned {video_frames_total} frames in {time.time() - start_time:.1f}s")
 
 
 if __name__ == "__main__":
@@ -207,16 +234,16 @@ if __name__ == "__main__":
     input_files = args["input_files"] if args["input_files"] else [args["input_file"]]
     competitor_names = load_competitor_names(args["competitors_file"])
 
-    print("== INITIALIZING ==")
-    print(f"Video file(s): {', '.join(input_files)}")
-    print(f"Competitor list: {args['competitors_file']}")
-    print(f"Output filename: {args['output_file']}")
-    print(f"Seconds between OCR capture frames: {args['interval_seconds']}")
-    print(f"Gap tolerance (missed intervals before closing window): {args['gap_tolerance']}")
+    log("== INITIALIZING ==")
+    log(f"Video file(s): {', '.join(input_files)}")
+    log(f"Competitor list: {args['competitors_file']}")
+    log(f"Output filename: {args['output_file']}")
+    log(f"Seconds between OCR capture frames: {args['interval_seconds']}")
+    log(f"Gap tolerance (missed intervals before closing window): {args['gap_tolerance']}")
 
     with open(args["output_file"], "w") as output_file:
         for i, input_file in enumerate(input_files):
-            print(f"\n== SCANNING {input_file} ({i+1}/{len(input_files)}) ==")
+            log(f"\n== SCANNING {input_file} ({i+1}/{len(input_files)}) ==")
             scan_video(
                 input_file=input_file,
                 competitor_names=competitor_names,
@@ -228,4 +255,4 @@ if __name__ == "__main__":
                 print_captured_strings=args["print_captured_strings"],
             )
 
-    print("\n== SUCCESS ==")
+    log("== SUCCESS ==")
