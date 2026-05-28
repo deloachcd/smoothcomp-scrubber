@@ -6,18 +6,18 @@ archive of a Smoothcomp tournament stream and automatically write the
 timestamps where the people you list show up to a CSV file.
 
 ## Pre-Requisites
-This depends on Google's `tesseract-ocr` engine, so you need that installed.
-MacOS has it through homebrew, your favorite Linux distro probably has it in
-its package manager, and Windows users should be using WSL and following 
-instructions for Linux distros with stuff like this script anyway.
+Your computer needs to be able to run Docker. That's it - this used to be
+a python virtualenv-based project, but after YouTube decided to roll out
+AV1 for most of the videos hosted on the platform, setting up an environment
+where OpenCV can decode said videos was complicated enough that a bundling
+everything in an image became a necessity. I put `yt-dlp` in there too, so
+that you can obtain the videos themselves easily.
 
-## Basic setup (assuming tesseract is installed)
+## Installation
 ``` sh
 git clone https://github.com/deloachcd/smoothcomp-scrubber.git
 cd smoothcomp-scrubber
-python3 -m venv venv
-source venv/bin/activate
-python3 -m pip install -r requirements.txt
+docker build -t local/scrubber .
 ```
 
 ## Basic usage
@@ -35,30 +35,20 @@ The basic workflow with this program is:
   the flags you need to get going
 
 ### Usage example
-#### Obtaining the video file with yt-dlp
+#### Obtaining the video file as MP4 with yt-dlp
 First, we need a video file to scrub through for timestamps. These are usually
 linked in the Smoothcomp page for the relevant tournament, and linked under the
 "Livestreams" tab there. From here, we can obtain YouTube links to the videos
 to be used with `yt-dlp`.
-
-Many package managers provide an outdated version of `yt-dlp` that will not
-actually work to retrieve videos - we can ensure we're using an up-to-date
-version by installing it in our project's virtual environment instead and
-calling it from there:
 ``` sh
-source venv/bin/activate
-pip install yt-dlp
-yt-dlp() {
-  ./venv/bin/yt-dlp \
-    --merge-output-format mkv \
-    $@
-}
-./venv/bin/yt-dlp 'https://www.youtube.com/watch?v=${VIDEO_ID}' -o stream.mkv
+# pull a video
+mkdir targets
+docker run --rm -v ./targets:/targets local/scrubber yt-dlp -S res,ect:mp4:m4a --recode mp4 "${YOUTUBE_VIDEO_URL}" -o /targets/video.mp4
 ```
 
 #### Scanning through the video file with the script
 Now, let's say we want to look for some names within `stream.mkv`.
-We'll first write them to a file `competitors.txt`:
+We'll first write them to a file `targets/competitors.txt`:
 ```
 Osama bin Laden
 Sadam Hussein
@@ -67,21 +57,13 @@ Kevin Spacey
 Lena Dunham
 God
 ```
-Once we've done that, we can run the script to find where our
+Once we've done that, we can use the script to find where our
 named competitors show up:
 ``` sh
-./get-smoothcomp-timestamps.py \
-  -v stream.mkv \
-  -f competitors.txt \
-  -o result.csv
+mkdir outputs
+docker run --rm -v ./targets:/targets -v ./outputs:/outputs local/scrubber pipenv run get-smoothcomp-timestamps.py -i /targets/video.mp4 -f /targets/competitors.txt -o /outputs/results.csv
 ```
 
 The script will then scan through the video, writing its current progress
 as console output and reporting when it detects listed names in the video
 stream.
-
-## TODOs for me to do later
-- Exceptions. This script has none of them right now, and they would help
-  out for sure.
-- Export to markdown tables / convert to PDFs directly
-- Orchestration for multiple mats/streams
