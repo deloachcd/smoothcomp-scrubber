@@ -20,8 +20,9 @@ def crop_frame_to_competitor_names(frame, height, width):
 def crop_frame_to_scoreboard(frame, height, width):
     # In-match scoreboard strip along the bottom of the frame where the
     # smaller persistent competitor names appear during the match.
-    # Assumes 16:9 aspect ratio.
-    return frame[13*(height//16):height,
+    # Starts at 10/16 of frame height to ensure names above the event
+    # info line are included. Assumes 16:9 aspect ratio.
+    return frame[10*(height//16):height,
                  0:width]
 
 

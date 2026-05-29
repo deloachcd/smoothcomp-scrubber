@@ -93,14 +93,14 @@ class TestCropRegions:
     def test_scoreboard_crop_shape(self):
         frame = self._blank_frame(720, 1280)
         crop = crop_frame_to_scoreboard(frame, 720, 1280)
-        # rows: 13*(720//16) to 720 = 585:720 -> 135 rows
+        # rows: 10*(720//16) to 720 = 450:720 -> 270 rows
         # cols: full width -> 1280 cols
-        assert crop.shape == (135, 1280)
+        assert crop.shape == (270, 1280)
 
     def test_nameplate_crop_does_not_overlap_scoreboard(self):
         h, w = 720, 1280
         nameplate_bottom = h // 2           # 360
-        scoreboard_top = 13 * (h // 16)    # 585
+        scoreboard_top = 10 * (h // 16)    # 450
         assert nameplate_bottom <= scoreboard_top
 
     def test_crops_work_on_1080p(self):
