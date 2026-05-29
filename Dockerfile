@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y \
     libtiff-dev \
     zlib1g-dev \
     libdav1d-dev \
+    libx264-dev \
     ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
@@ -55,6 +56,7 @@ RUN ./configure \
     --disable-debug \
     --disable-doc \
     --enable-libdav1d \
+    --enable-libx264 \
     --enable-pic \
  && make -j"$(nproc)" \
  && make install
