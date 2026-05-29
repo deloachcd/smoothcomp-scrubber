@@ -7,7 +7,13 @@ from datetime import timedelta
 import pytest
 
 # Modules loaded via conftest.py aliases (hyphenated filenames can't be imported directly)
-from get_smoothcomp_timestamps import detect_competitor_names, load_competitor_names, update_match_windows
+from get_smoothcomp_timestamps import (
+    detect_competitor_names,
+    load_competitor_names,
+    update_match_windows,
+    crop_frame_to_competitor_names,
+    crop_frame_to_scoreboard,
+)
 from make_clips import (
     parse_timedelta,
     format_timestamp_for_filename,
@@ -65,6 +71,44 @@ class TestLoadCompetitorNames:
             assert "" not in result
         finally:
             os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# crop regions
+# ---------------------------------------------------------------------------
+
+import numpy as np
+
+class TestCropRegions:
+    def _blank_frame(self, height=720, width=1280):
+        return np.zeros((height, width), dtype=np.uint8)
+
+    def test_nameplate_crop_shape(self):
+        frame = self._blank_frame(720, 1280)
+        crop = crop_frame_to_competitor_names(frame, 720, 1280)
+        # rows: 3*(720//16) to 720//2  = 135:360  -> 225 rows
+        # cols: 3*(1280//32) to 29*(1280//32) = 120:1160 -> 1040 cols
+        assert crop.shape == (225, 1040)
+
+    def test_scoreboard_crop_shape(self):
+        frame = self._blank_frame(720, 1280)
+        crop = crop_frame_to_scoreboard(frame, 720, 1280)
+        # rows: 13*(720//16) to 720 = 585:720 -> 135 rows
+        # cols: full width -> 1280 cols
+        assert crop.shape == (135, 1280)
+
+    def test_nameplate_crop_does_not_overlap_scoreboard(self):
+        h, w = 720, 1280
+        nameplate_bottom = h // 2           # 360
+        scoreboard_top = 13 * (h // 16)    # 585
+        assert nameplate_bottom <= scoreboard_top
+
+    def test_crops_work_on_1080p(self):
+        frame = self._blank_frame(1080, 1920)
+        nameplate = crop_frame_to_competitor_names(frame, 1080, 1920)
+        scoreboard = crop_frame_to_scoreboard(frame, 1080, 1920)
+        assert nameplate.shape[0] > 0
+        assert scoreboard.shape[0] > 0
 
 
 # ---------------------------------------------------------------------------

@@ -11,14 +11,28 @@ def log(msg):
 
 
 def crop_frame_to_competitor_names(frame, height, width):
-    # crop to the section of the stream that's actually relevant
-    # to our OCR engine - the small section where names actually
-    # show up
-    #
-    # note that we assume a 16:9 aspect ratio here -
-    # anything else will be likely to break our text recognition
+    # Pre-match nameplate: center of frame where the large intro graphic appears.
+    # Assumes 16:9 aspect ratio.
     return frame[3*(height//16):height//2,
                  3*(width//32):29*(width//32)]
+
+
+def crop_frame_to_scoreboard(frame, height, width):
+    # In-match scoreboard strip along the bottom of the frame where the
+    # smaller persistent competitor names appear during the match.
+    # Assumes 16:9 aspect ratio.
+    return frame[13*(height//16):height,
+                 0:width]
+
+
+def extract_text_from_frame(frame, height, width, psm, pytesseract):
+    """Run OCR on both the nameplate and scoreboard regions, return combined text."""
+    nameplate = crop_frame_to_competitor_names(frame, height, width)
+    scoreboard = crop_frame_to_scoreboard(frame, height, width)
+    config = f"--psm {psm} -c load_system_dawg=false -c load_freq_dawg=false"
+    nameplate_text = pytesseract.image_to_string(nameplate, config=config)
+    scoreboard_text = pytesseract.image_to_string(scoreboard, config=config)
+    return nameplate_text + "\n" + scoreboard_text
 
 
 def load_competitor_names(path):
@@ -145,13 +159,8 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
         if not rval:
             break
 
-        ocr_frame = crop_frame_to_competitor_names(
-            cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), f_height, f_width
-        )
-        frame_as_str = pytesseract.image_to_string(
-            ocr_frame,
-            config=f"--psm {psm} -c load_system_dawg=false -c load_freq_dawg=false"
-        )
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame_as_str = extract_text_from_frame(gray, f_height, f_width, psm, pytesseract)
 
         detected_names = detect_competitor_names(frame_as_str, competitor_names)
 
