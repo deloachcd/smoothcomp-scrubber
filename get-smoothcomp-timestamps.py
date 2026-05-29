@@ -99,10 +99,15 @@ def format_eta(seconds_remaining):
 
 
 def scan_video(input_file, competitor_names, output_file, interval_seconds,
-               gap_tolerance, psm, jump_to_timestamp=None, print_captured_strings=False):
+               gap_tolerance, psm, jump_to_timestamp=None, print_captured_strings=False,
+               global_frames_total=None, global_frames_done_before=0, global_start_time=None):
     """Scan a single video file for competitor match windows.
 
     Writes rows of (name, start_time, end_time, video_file) to output_file.
+
+    global_frames_total, global_frames_done_before, and global_start_time are
+    used to compute an ETA across all files when scanning multiple videos.
+    If not provided, ETA is computed relative to this file only.
     """
     # cv2/pytesseract imported here so the pure functions above can be imported
     # in tests without requiring those packages to be installed on the host.
@@ -125,7 +130,7 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
     log(f"Video FPS: {video_fps}")
     frames_to_iterate = int(interval_seconds * video_fps)
 
-    start_time = time.time()
+    start_time = global_start_time if global_start_time is not None else time.time()
     rval, first_frame_data = video.read()
     if rval:
         f_height, f_width, _ = first_frame_data.shape
@@ -182,15 +187,21 @@ def scan_video(input_file, competitor_names, output_file, interval_seconds,
             log("== CAPTURE STR END ==")
 
         elapsed = time.time() - start_time
-        pct = (current_frame / video_frames_total) * 100
-        frames_done = current_frame - start_frame + frames_to_iterate
-        if frames_done > 0 and elapsed > 0:
-            eta_str = f"ETA {format_eta(elapsed / frames_done * (frames_remaining - frames_done))}"
+        local_frames_done = current_frame - start_frame + frames_to_iterate
+
+        # Use global totals if available, otherwise fall back to per-file
+        g_total = global_frames_total if global_frames_total is not None else video_frames_total
+        g_done = global_frames_done_before + local_frames_done
+        pct = (g_done / g_total * 100) if g_total > 0 else 0
+        g_remaining = g_total - g_done
+
+        if g_done > 0 and elapsed > 0:
+            eta_str = f"ETA {format_eta(elapsed / g_done * g_remaining)}"
         else:
             eta_str = "ETA --"
 
         found_str = ", ".join([f"found {n}" for n in detected_names])
-        log(f"{video_time} -- {pct:.1f}% -- {eta_str}" + (f" -- {found_str}" if found_str else ""))
+        log(f"{video_time} -- {pct:.1f}% overall -- {eta_str}" + (f" -- {found_str}" if found_str else ""))
 
     # close any windows still open at end of video
     final_time = timedelta(seconds=last_frame / video_fps) if video_frames_total > 0 else timedelta(0)
@@ -250,7 +261,22 @@ if __name__ == "__main__":
     log(f"Seconds between OCR capture frames: {args['interval_seconds']}")
     log(f"Gap tolerance (missed intervals before closing window): {args['gap_tolerance']}")
 
+    # Pre-compute total frame count across all files for global ETA
+    log("Computing video lengths...")
+    import time as _time
+    global_start = _time.time()
+    file_frame_counts = []
+    for input_file in input_files:
+        cap = cv2.VideoCapture(input_file, cv2.CAP_FFMPEG, [
+            cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_NONE
+        ])
+        file_frame_counts.append(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
+        cap.release()
+    global_frames_total = sum(file_frame_counts)
+    log(f"Total frames across all files: {global_frames_total}")
+
     with open(args["output_file"], "w") as output_file:
+        frames_done_before = 0
         for i, input_file in enumerate(input_files):
             log(f"\n== SCANNING {input_file} ({i+1}/{len(input_files)}) ==")
             scan_video(
@@ -262,6 +288,10 @@ if __name__ == "__main__":
                 psm=args["psm"],
                 jump_to_timestamp=args["jump_to_timestamp"] if len(input_files) == 1 else None,
                 print_captured_strings=args["print_captured_strings"],
+                global_frames_total=global_frames_total,
+                global_frames_done_before=frames_done_before,
+                global_start_time=global_start,
             )
+            frames_done_before += file_frame_counts[i]
 
     log("== SUCCESS ==")
