@@ -129,6 +129,7 @@ RUN apt-get update && apt-get install -y \
     libpng16-16 \
     libtiff6 \
     libdav1d7 \
+    libx264-164 \
     ca-certificates \
     tesseract-ocr \
     libtesseract-dev \
