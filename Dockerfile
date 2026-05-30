@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y \
     libtiff-dev \
     zlib1g-dev \
     libdav1d-dev \
+    libx264-dev \
     ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
@@ -55,6 +56,7 @@ RUN ./configure \
     --disable-debug \
     --disable-doc \
     --enable-libdav1d \
+    --enable-libx264 \
     --enable-pic \
  && make -j"$(nproc)" \
  && make install
@@ -127,6 +129,7 @@ RUN apt-get update && apt-get install -y \
     libpng16-16 \
     libtiff6 \
     libdav1d7 \
+    libx264-164 \
     ca-certificates \
     tesseract-ocr \
     libtesseract-dev \
@@ -142,13 +145,13 @@ RUN echo "--remote-components ejs:npm" > /etc/yt-dlp.conf
 COPY --from=builder /opt/ffmpeg /opt/ffmpeg
 COPY --from=builder /usr/local /usr/local
 
-ENV LD_LIBRARY_PATH=/opt/ffmpeg/lib:/usr/local/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/opt/ffmpeg/lib:/usr/local/lib
 
 # Install pytesseract in pipenv
 ENV PATH=/root/.local/bin:/opt/ffmpeg/bin:${PATH}
 RUN pipx install pipenv yt-dlp \
  && pipenv --site-packages \
- && pipenv install pytesseract
+ && pipenv install pytesseract pytest
 
 # Verify OpenCV imports correctly
 RUN python3 -c "import cv2; print(cv2.__version__)"
@@ -169,8 +172,11 @@ PY
 RUN mkdir -p /targets /outputs
 VOLUME ["/targets", "/outputs"]
 
-# copy in the script
+# copy in the scripts and tests
 COPY get-smoothcomp-timestamps.py /usr/local/bin/get-smoothcomp-timestamps.py
-RUN chmod u+x /usr/local/bin/get-smoothcomp-timestamps.py
+COPY make-clips.py /usr/local/bin/make-clips.py
+COPY conftest.py /usr/local/bin/conftest.py
+COPY test_scrubber.py /usr/local/bin/test_scrubber.py
+RUN chmod u+x /usr/local/bin/get-smoothcomp-timestamps.py /usr/local/bin/make-clips.py
 
 CMD ["python3"]

@@ -1,138 +1,298 @@
 #!/usr/bin/env python3
-import argparse
-from datetime import datetime, timedelta
-import time
-import os
+import sys
+sys.stdout.reconfigure(line_buffering=True)
 
-import cv2
-import pytesseract
+from datetime import timedelta
+
+
+def log(msg):
+    from datetime import datetime
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 
 def crop_frame_to_competitor_names(frame, height, width):
-    # crop to the section of the stream that's actually relevant
-    # to our OCR engine - the small section where names actually
-    # show up
-    # 
-    # note that we assume a 16:9 aspect ratio here - 
-    # anything else will be likely to break our text recognition
-    return frame[3*(height//16):height//2, 
+    # Pre-match nameplate: center of frame where the large intro graphic appears.
+    # Assumes 16:9 aspect ratio.
+    return frame[3*(height//16):height//2,
                  3*(width//32):29*(width//32)]
 
 
-ap = argparse.ArgumentParser()
-ap.add_argument("-i", "--input-file", type=str, help="path to input video file [required]")
-ap.add_argument("-f", "--competitors-file", type=str, default="competitors.txt",
-	            help="path to input file listing competitors (default:competitors.txt)")
-ap.add_argument("-o", "--output-file", type=str, default="output.csv",
-	            help="path to input file listing competitors (default:output.csv)")
-ap.add_argument("-s", "--interval-seconds", type=float, default=5,
-                help="seconds between OCR captures to check for competitor names (default:5)")
-ap.add_argument("--jump-to-timestamp", type=str,
-                help="start at a specific time: (format:HH:MM:SS)")
-ap.add_argument("--psm", type=str, default=11,
-                help="have tesseract-ocr use a specific PSM (default:11)")
-ap.add_argument("--print-captured-strings", action="store_true",
-                help="print OCR capture strings as the program runs")
-ap.add_argument("--print-build-info", action="store_true",
-                help="print OpenCV build info")
-ap.add_argument("--opencv-log-level", type=str, default="WARNING",
-                help="seconds between OCR captures to check for competitor names (default:5)")
-args = vars(ap.parse_args())
+def crop_frame_to_scoreboard(frame, height, width):
+    # In-match scoreboard strip along the bottom of the frame where the
+    # smaller persistent competitor names appear during the match.
+    # Starts at 10/16 of frame height to ensure names above the event
+    # info line are included. Assumes 16:9 aspect ratio.
+    return frame[10*(height//16):height,
+                 0:width]
 
-# set OpenCV log level to debug
-if args["opencv_log_level"]:
-    os.environ["OPENCV_LOG_LEVEL"] = args["opencv_log_level"]
-if args["print_build_info"]:
-    print(cv2.getBuildInformation())
 
-# competitor_names list will be used to check for relevant names
-# in OCR-captured strings
-competitor_names = []
-with open(args["competitors_file"], "r") as infile:
-    for row in infile.readlines():
-        competitor_names.append(row.replace("\n","").strip())
+def extract_text_from_frame(frame, height, width, psm, pytesseract):
+    """Run OCR on both the nameplate and scoreboard regions, return combined text."""
+    nameplate = crop_frame_to_competitor_names(frame, height, width)
+    scoreboard = crop_frame_to_scoreboard(frame, height, width)
+    config = f"--psm {psm} -c load_system_dawg=false -c load_freq_dawg=false"
+    nameplate_text = pytesseract.image_to_string(nameplate, config=config)
+    scoreboard_text = pytesseract.image_to_string(scoreboard, config=config)
+    return nameplate_text + "\n" + scoreboard_text
 
-# use ffmpeg backend and don't even try to use hardware acceleration for the
-# sake of portability
-video = cv2.VideoCapture(args["input_file"], cv2.CAP_FFMPEG, [
-    cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_NONE
-])
-video_fps = video.get(cv2.CAP_PROP_FPS)
-video_frames_total = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 
-if not video.isOpened():
-    print("Error opening video stream")
-    exit()
+def load_competitor_names(path):
+    """Load competitor names from a file, skipping blank lines."""
+    names = []
+    with open(path, "r") as f:
+        for row in f.readlines():
+            name = row.replace("\n", "").strip()
+            if name:
+                names.append(name)
+    return names
 
-print("== INITIALIZING ==")
-print(f"Video filename: {args['input_file']}")
-print(f"Video FPS: {video_fps}")
-print(f"Comptitor list: {args['competitors_file']}")
-print(f"Output filename: {args['output_file']}")
-print(f"Seconds between OCR capture frames: {args['interval_seconds']}")
-frames_to_iterate = int(args["interval_seconds"] * video_fps)
 
-# read shape from first frame so we don't need to get dimensions on
-# each loop iteration
-start_time = time.time()
-rval, first_frame = video.read()
-if rval:
-    f_height, f_width, f_channels = first_frame.shape
-else:
-    print("Could not get first frame of video file! (bad return value)")
-video_time = timedelta(seconds=0)
-if args["jump_to_timestamp"]:
-    timeskip_str = datetime.strptime(args["jump_to_timestamp"],"%H:%M:%S")
-    initial_timeskip = timedelta(
-        hours=timeskip_str.hour,
-        minutes=timeskip_str.minute,
-        seconds=timeskip_str.second
-    )
-    video_time += initial_timeskip
-    first_frame = int(initial_timeskip.seconds * video_fps)
-else:
-    first_frame = 0
-output_file = open(args["output_file"],"w")
-
-# start scanning through the video, looking for instances of listed
-# competitor names
-print("\n== SCANNING ==")
-for current_frame in range(first_frame, video_frames_total, frames_to_iterate):
-    video.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
-    rval, frame = video.read()
-    if not rval:
-        break
-    
-    # we make the frame from our video that OCR has to process smaller,
-    # by converting it to grayscale and cropping it only to the area
-    # where the relevant competitor names will actually show up on
-    # the stream
-    ocr_frame = crop_frame_to_competitor_names(
-        cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), f_height, f_width
-    )
-    # From the Tesseract docs:
-    # PSM=11: Sparse text. Find as much text as possible in no particular order.
-    # This seems to be faster and more accurate than the default method about
-    # getting the names we're looking for.
-    frame_as_str = pytesseract.image_to_string(ocr_frame,config=f"--psm {args['psm']} -c load_system_dawg=false -c load_freq_dawg=false")
-    detected_competitor_names = []
+def detect_competitor_names(frame_as_str, competitor_names):
+    """Return list of names from competitor_names found in frame_as_str."""
+    detected = []
+    lowered = frame_as_str.lower()
     for name in competitor_names:
-        lowered_frame_str = frame_as_str.lower()
-        competitor_name_in_frame = all(
-            map(lambda x: x.lower() in lowered_frame_str, name.split())
-        )
-        if competitor_name_in_frame:
-            output_file.write(f"{name},{video_time}\n")
-            output_file.flush()
-            detected_competitor_names.append(f"found {name}")
-    video_time += timedelta(seconds=args["interval_seconds"])
-    if args["print_captured_strings"]:
-        print("== CAPTURED STR START ==")
-        print(frame_as_str)
-        print("== CAPTURE STR END ==")
-    print(f"{video_time} -- {(current_frame/video_frames_total)*100:.2f}%"
-          + " video scanned... " + ", ".join(detected_competitor_names))
-output_file.close()
+        parts = name.split()
+        if parts and all(part.lower() in lowered for part in parts):
+            detected.append(name)
+    return detected
 
-print("== SUCCESS ==")
-print(f"Scanned through {video_frames_total} frames in {time.time() - start_time}s")
+
+def update_match_windows(active_matches, competitor_names, detected_names, video_time, gap_tolerance):
+    """Update open match windows given the current set of detected names.
+
+    Returns list of (name, start_time, end_time) for any windows that closed.
+    end_time is the last frame the name was actually detected, not the frame
+    where the gap tolerance was exceeded.
+    Mutates active_matches in place.
+    """
+    closed = []
+    for name in competitor_names:
+        if name in detected_names:
+            if name not in active_matches:
+                active_matches[name] = {
+                    "start_time": video_time,
+                    "last_seen_time": video_time,
+                    "miss_count": 0,
+                }
+            else:
+                active_matches[name]["miss_count"] = 0
+                active_matches[name]["last_seen_time"] = video_time
+        elif name in active_matches:
+            active_matches[name]["miss_count"] += 1
+            if active_matches[name]["miss_count"] > gap_tolerance:
+                match = active_matches.pop(name)
+                end_time = match.get("last_seen_time", video_time)
+                closed.append((name, match["start_time"], end_time))
+    return closed
+
+
+def format_eta(seconds_remaining):
+    seconds_remaining = int(seconds_remaining)
+    h = seconds_remaining // 3600
+    m = (seconds_remaining % 3600) // 60
+    s = seconds_remaining % 60
+    if h:
+        return f"{h}h {m:02d}m {s:02d}s"
+    if m:
+        return f"{m}m {s:02d}s"
+    return f"{s}s"
+
+
+def scan_video(input_file, competitor_names, output_file, interval_seconds,
+               gap_tolerance, psm, jump_to_timestamp=None, print_captured_strings=False,
+               global_frames_total=None, global_frames_done_before=0, global_start_time=None):
+    """Scan a single video file for competitor match windows.
+
+    Writes rows of (name, start_time, end_time, video_file) to output_file.
+
+    global_frames_total, global_frames_done_before, and global_start_time are
+    used to compute an ETA across all files when scanning multiple videos.
+    If not provided, ETA is computed relative to this file only.
+    """
+    # cv2/pytesseract imported here so the pure functions above can be imported
+    # in tests without requiring those packages to be installed on the host.
+    import cv2
+    import pytesseract
+    from datetime import datetime
+    import time
+
+    video = cv2.VideoCapture(input_file, cv2.CAP_FFMPEG, [
+        cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_NONE
+    ])
+
+    if not video.isOpened():
+        log(f"Error opening video stream: {input_file}")
+        return
+
+    video_fps = video.get(cv2.CAP_PROP_FPS)
+    video_frames_total = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    log(f"Video FPS: {video_fps}")
+    frames_to_iterate = int(interval_seconds * video_fps)
+
+    start_time = global_start_time if global_start_time is not None else time.time()
+    rval, first_frame_data = video.read()
+    if rval:
+        f_height, f_width, _ = first_frame_data.shape
+    else:
+        log("Could not get first frame of video file! (bad return value)")
+        return
+
+    if jump_to_timestamp:
+        timeskip_str = datetime.strptime(jump_to_timestamp, "%H:%M:%S")
+        initial_timeskip = timedelta(
+            hours=timeskip_str.hour,
+            minutes=timeskip_str.minute,
+            seconds=timeskip_str.second
+        )
+        start_frame = int(initial_timeskip.total_seconds() * video_fps)
+    else:
+        start_frame = 0
+
+    active_matches = {}
+    last_frame = start_frame
+    frames_remaining = video_frames_total - start_frame
+
+    for current_frame in range(start_frame, video_frames_total, frames_to_iterate):
+        # derive video_time from actual frame position to avoid floating-point
+        # drift when interval_seconds doesn't divide evenly into whole frames
+        video_time = timedelta(seconds=current_frame / video_fps)
+        last_frame = current_frame
+
+        video.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
+        rval, frame = video.read()
+        if not rval:
+            break
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame_as_str = extract_text_from_frame(gray, f_height, f_width, psm, pytesseract)
+
+        detected_names = detect_competitor_names(frame_as_str, competitor_names)
+
+        names_before = set(active_matches.keys())
+        closed = update_match_windows(active_matches, competitor_names, detected_names, video_time, gap_tolerance)
+        newly_opened = set(active_matches.keys()) - names_before
+
+        for name, start, end in closed:
+            output_file.write(f"{name},{start},{end},{input_file}\n")
+            output_file.flush()
+            log(f">> closed window for {name}: {start} -> {end}")
+
+        for name in newly_opened:
+            log(f">> opened window for {name} at {video_time}")
+
+        if print_captured_strings:
+            log("== CAPTURED STR START ==")
+            print(frame_as_str)
+            log("== CAPTURE STR END ==")
+
+        elapsed = time.time() - start_time
+        local_frames_done = current_frame - start_frame + frames_to_iterate
+
+        # Use global totals if available, otherwise fall back to per-file
+        g_total = global_frames_total if global_frames_total is not None else video_frames_total
+        g_done = global_frames_done_before + local_frames_done
+        pct = (g_done / g_total * 100) if g_total > 0 else 0
+        g_remaining = g_total - g_done
+
+        if g_done > 0 and elapsed > 0:
+            eta_str = f"ETA {format_eta(elapsed / g_done * g_remaining)}"
+        else:
+            eta_str = "ETA --"
+
+        found_str = ", ".join([f"found {n}" for n in detected_names])
+        log(f"{video_time} -- {pct:.1f}% overall -- {eta_str}" + (f" -- {found_str}" if found_str else ""))
+
+    # close any windows still open at end of video
+    final_time = timedelta(seconds=last_frame / video_fps) if video_frames_total > 0 else timedelta(0)
+    for name in list(active_matches.keys()):
+        match = active_matches.pop(name)
+        end_time = match.get("last_seen_time", final_time)
+        output_file.write(f"{name},{match['start_time']},{end_time},{input_file}\n")
+        output_file.flush()
+        log(f">> closed window for {name}: {match['start_time']} -> {end_time}")
+
+    log(f"Scanned {video_frames_total} frames in {time.time() - start_time:.1f}s")
+
+
+if __name__ == "__main__":
+    import argparse
+    import os
+    import cv2
+
+    ap = argparse.ArgumentParser()
+    input_group = ap.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("-i", "--input-file", type=str,
+                             help="path to a single input video file")
+    input_group.add_argument("-I", "--input-files", type=str, nargs="+",
+                             help="paths to multiple input video files")
+    ap.add_argument("-f", "--competitors-file", type=str, default="competitors.txt",
+                    help="path to input file listing competitors (default:competitors.txt)")
+    ap.add_argument("-o", "--output-file", type=str, default="output.csv",
+                    help="path to output CSV file (default:output.csv)")
+    ap.add_argument("-s", "--interval-seconds", type=float, default=5,
+                    help="seconds between OCR captures to check for competitor names (default:5)")
+    ap.add_argument("-g", "--gap-tolerance", type=int, default=3,
+                    help="consecutive missed intervals before closing a match window (default:3)")
+    ap.add_argument("--jump-to-timestamp", type=str,
+                    help="start at a specific time: (format:HH:MM:SS) — only applies to single-file mode")
+    ap.add_argument("--psm", type=int, default=11,
+                    help="have tesseract-ocr use a specific PSM (default:11)")
+    ap.add_argument("--print-captured-strings", action="store_true",
+                    help="print OCR capture strings as the program runs")
+    ap.add_argument("--print-build-info", action="store_true",
+                    help="print OpenCV build info")
+    ap.add_argument("--opencv-log-level", type=str, default="WARNING",
+                    help="OpenCV log level (default:WARNING)")
+    args = vars(ap.parse_args())
+
+    if args["opencv_log_level"]:
+        os.environ["OPENCV_LOG_LEVEL"] = args["opencv_log_level"]
+    if args["print_build_info"]:
+        print(cv2.getBuildInformation())
+
+    input_files = args["input_files"] if args["input_files"] else [args["input_file"]]
+    competitor_names = load_competitor_names(args["competitors_file"])
+
+    log("== INITIALIZING ==")
+    log(f"Video file(s): {', '.join(input_files)}")
+    log(f"Competitor list: {args['competitors_file']}")
+    log(f"Output filename: {args['output_file']}")
+    log(f"Seconds between OCR capture frames: {args['interval_seconds']}")
+    log(f"Gap tolerance (missed intervals before closing window): {args['gap_tolerance']}")
+
+    # Pre-compute total frame count across all files for global ETA
+    log("Computing video lengths...")
+    import time as _time
+    global_start = _time.time()
+    file_frame_counts = []
+    for input_file in input_files:
+        cap = cv2.VideoCapture(input_file, cv2.CAP_FFMPEG, [
+            cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_NONE
+        ])
+        file_frame_counts.append(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
+        cap.release()
+    global_frames_total = sum(file_frame_counts)
+    log(f"Total frames across all files: {global_frames_total}")
+
+    with open(args["output_file"], "w") as output_file:
+        frames_done_before = 0
+        for i, input_file in enumerate(input_files):
+            log(f"\n== SCANNING {input_file} ({i+1}/{len(input_files)}) ==")
+            scan_video(
+                input_file=input_file,
+                competitor_names=competitor_names,
+                output_file=output_file,
+                interval_seconds=args["interval_seconds"],
+                gap_tolerance=args["gap_tolerance"],
+                psm=args["psm"],
+                jump_to_timestamp=args["jump_to_timestamp"] if len(input_files) == 1 else None,
+                print_captured_strings=args["print_captured_strings"],
+                global_frames_total=global_frames_total,
+                global_frames_done_before=frames_done_before,
+                global_start_time=global_start,
+            )
+            frames_done_before += file_frame_counts[i]
+
+    log("== SUCCESS ==")
