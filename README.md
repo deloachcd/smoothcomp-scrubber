@@ -21,16 +21,22 @@ cd smoothcomp-scrubber
 make build
 ```
 
-## Basic workflow
-1. Download the tournament stream video
-2. Write a list of competitor names to a text file
-3. Scan the video to find match timestamps (`get-smoothcomp-timestamps.py`)
-4. Optionally, cut those matches into clips (`make-clips.py`)
+## Basic usage (the easy way)
+Spin up a docker image and use [the UI Nate made](https://github.com/Felttrip/smoothcomp-scrubber-ui).
 
-### Step 1: Download the video
-Tournament stream links are usually listed under the "Livestreams" tab on
-the Smoothcomp page for the relevant tournament.
-
+## Basic usage (old workflow)
+The basic workflow with this program is:
+- obtain the archive of the smoothcomp stream you want to scrub
+  through, in a format like .MOV or .MP4 etc. (`yt-dlp` is a pretty
+  good tool for this)
+- write a list of competitor names to find in the stream to a text file
+  (names should be written as they're going to appear in the smoothcomp 
+  stream, case-insensitive)
+- call the script, passing in the video archive and competitor list files
+  as arguments, and either also specifying an output file or just reading 
+  from the default `output.csv` once you want to see where the competitors
+  you listed show up. the script has a `-h` option that will tell you all
+  the flags you need to get going
 ``` sh
 URL=https://www.youtube.com/watch?v=... make download
 ```
