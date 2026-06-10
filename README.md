@@ -22,7 +22,8 @@ make build
 ```
 
 ## Basic usage (the easy way)
-Spin up a docker image and use [the UI Nate made](https://github.com/Felttrip/smoothcomp-scrubber-ui).
+Use git to clone [the UI Nate made](https://github.com/Felttrip/smoothcomp-scrubber-ui),
+build the docker image and run it with a nice GUI that makes things easier.
 
 ## Basic usage (old workflow)
 The basic workflow with this program is:
